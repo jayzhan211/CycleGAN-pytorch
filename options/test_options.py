@@ -11,6 +11,7 @@ class TestOptions(BaseOptions):
         parser.add_argument('--results_dir', type=str, default='./results/', help='saves results here.')
         parser.add_argument('--aspect_ratio', type=float, default=1.0, help='aspect ratio of result images')
         parser.add_argument('--phase', type=str, default='test', help='train|val|test')
+        parser.add_argument('--save_img_freq', type=int, default=5, help='frequency of saving images at test phase')
         """
         BatchNorm and Dropout have different behavior between train and test
         """

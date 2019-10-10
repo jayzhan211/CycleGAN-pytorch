@@ -26,9 +26,9 @@ if __name__ == '__main__':
         model.test()
         visuals = model.get_current_visuals()
         img_path = model.get_image_paths()
-        if i % 5 == 0:
+        if i % opt.save_img_freq == 0:
             print('processing ({:02d}) image... {}'.format(i, img_path))
-            save_images(web_page, visuals, img_path,  aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
+            save_images(web_page, visuals, img_path,  aspect_ratio=opt.aspect_ratio, image_size=opt.display_window_size)
 
 
 

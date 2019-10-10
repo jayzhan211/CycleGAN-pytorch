@@ -194,3 +194,4 @@ class CycleGANModel(BaseModel):
     def backward_D(self):
         self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, self.fake_B)
         self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, self.fake_A)
+

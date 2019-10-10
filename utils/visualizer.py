@@ -57,6 +57,7 @@ class Visualizer:
         self.name = opt.name
         self.port = opt.display_port
         self.saved = False
+        self.plot_data = None
         if self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
             self.ncols = opt.display_ncols
@@ -64,7 +65,11 @@ class Visualizer:
             if not self.vis.check_connection():
                 self.create_visdom_connections()
 
-        if self.use_html:  # create an HTML object at <checkpoints_dir>/web/; images will be saved under <checkpoints_dir>/web/images/
+        """
+        create an HTML object at <checkpoints_dir>/web/
+        images will be saved under <checkpoints_dir>/web/images/
+        """
+        if self.use_html:
             self.web_dir = os.path.join(opt.checkpoints_dir, opt.name, 'web')
             self.img_dir = os.path.join(self.web_dir, 'images')
             print('create web directory {}...' .format(self.web_dir))
@@ -104,21 +109,21 @@ class Visualizer:
         :param losses: (name, float)
         :return:
         """
-        if not hasattr(self, 'plot_data'):
-            self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.key())}
+
+        self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.key())}
         self.plot_data['X'].append(epoch + counter_ratio)
         self.plot_data['Y'].append([losses[k] for k in self.plot_data['legend']])
         try:
             self.vis.line(
                 X=np.stack([np.array(self.plot_data['X'])] * len(self.plot_data['legend']), 1),
                 Y=np.array(self.plot_data['Y']),
-                opts={
-                    'title': self.name + 'loss over time',
-                    'legend': self.plot_data['legend'],
-                    'xlabel': 'epoch',
-                    'ylabel': 'loss'
-                },
-                win=self.display_id
+                opts=dict(
+                    title=self.name + 'loss over time',
+                    legend=self.plot_data['legend'],
+                    xlabel='epoch',
+                    ylabel='loss',
+                ),
+                win=self.display_id,
             )
         except VisdomExceptionBase:
             self.create_visdom_connections()

@@ -13,7 +13,7 @@ class BaseOptions:
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         # basic
         parser.add_argument('--data_root', required=True,
-                            help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+                            help='path to images (should have sub_folders trainA, trainB, valA, valB, etc)')
         parser.add_argument('--name', type=str, default='experiment_name',
                             help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--gpu_ids', type=str, default='-1',

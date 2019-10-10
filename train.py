@@ -6,19 +6,18 @@ import time
 
 if __name__ == '__main__':
     opt = TrainOptions().parse()
-
     dataset = create_dataset(opt)
     dataset_size = len(dataset)
-    print('The number of training images = {}'.format(dataset_size))
     model = create_model(opt)
     model.setup(opt)
     visualizer = Visualizer(opt)
+    print('Training is Starting ...')
     total_iters = 0
+    t_data = 0
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         epoch_start_time = time.time()
         iter_data_time = time.time()
         epoch_iter = 0
-
         for i, data in enumerate(dataset):
             iter_start_time = time.time()
             if total_iters % opt.print_freq == 0:
@@ -29,7 +28,7 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
 
-            if total_iters % opt.display_freq == 0:
+            if total_iters % opt.print_freq == 0:
                 losses = model.get_current_losses()
                 t_comp = (time.time() - iter_start_time) / opt.batch_size
                 visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)

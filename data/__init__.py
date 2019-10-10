@@ -12,18 +12,19 @@ def find_dataset_using_name(dataset_name):
     """
     dataset_filename = 'data.' + dataset_name + '_dataset'
     # print(dataset_filename)
-    datasetlib = importlib.import_module(dataset_filename)
+    dataset_lib = importlib.import_module(dataset_filename)
     dataset = None
     target_dataset_name = dataset_name.replace('_', '') + 'dataset'
     # print('target {}'.format(target_dataset_name))
-    for name, cls in datasetlib.__dict__.items():
+    for name, cls in dataset_lib.__dict__.items():
         # print('name {}'.format(name.lower()))
         if name.lower() == target_dataset_name.lower() \
                 and issubclass(cls, BaseDataset):
             dataset = cls
     if dataset is None:
         raise NotImplementedError("In {}.py , there should be a subclass of BaseDataset with"
-                                  "class name that matches {} in lowercase.".format(dataset_filename, target_dataset_name))
+                                  "class name that matches {} in lowercase."
+                                  .format(dataset_filename, target_dataset_name))
 
     return dataset
 
@@ -51,6 +52,7 @@ class CustomDataLoader:
             shuffle=not opt.serial_batches,
             num_workers=int(opt.num_threads)
         )
+        print('the number of training images = {}'.format(self.__len__()))
 
     def load_data(self):
         return self

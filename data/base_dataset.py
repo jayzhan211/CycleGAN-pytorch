@@ -7,13 +7,11 @@ import torchvision.transforms as transforms
 class BaseDataset(data.Dataset, ABC):
     def __init__(self, opt):
         """
-        abstract base class for datasets
-
-        To create a subclass, 4 functions below must be implement
+        abstract base class for dataset
+        To create a subclass, 3 functions below must be implement
         <__init__>
         <__len__>
         <__getitem__>
-
         :param opt:
         """
         self.opt = opt

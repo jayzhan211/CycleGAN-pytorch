@@ -59,6 +59,8 @@ class BaseModel(ABC):
 
         Returns:
             the modified parser.
+            :param is_train:
+            :param parser:
         """
         return parser
 
@@ -90,7 +92,7 @@ class BaseModel(ABC):
         if self.isTrain:
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
         if not self.isTrain or opt.continue_train:
-            load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
+            load_suffix = 'iter_{}' .format(opt.load_iter) if opt.load_iter > 0 else opt.epoch
             self.load_networks(load_suffix)
         self.print_networks(opt.verbose)
 
@@ -128,7 +130,7 @@ class BaseModel(ABC):
                 scheduler.step()
 
         lr = self.optimizers[0].param_groups[0]['lr']
-        print('learning rate = %.7f' % lr)
+        print('learning rate is {0:7f}'.format(lr))
 
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
@@ -139,18 +141,18 @@ class BaseModel(ABC):
         return visual_ret
 
     def get_current_losses(self):
-        """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""
+        """Return training losses / errors. train.py will print out these errors on console, and save them to a file"""
         errors_ret = OrderedDict()
         for name in self.loss_names:
             if isinstance(name, str):
-                errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
+                errors_ret[name] = float(getattr(self, 'loss_' + name))
         return errors_ret
 
     def save_networks(self, epoch):
         """Save all the networks to the disk.
 
         Parameters:
-            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
+            epoch (int) -- current epoch; used in the file name '{str}_net_{str}.pth' % (epoch, name)
         """
         for name in self.model_names:
             if isinstance(name, str):
@@ -186,7 +188,7 @@ class BaseModel(ABC):
         """
         for name in self.model_names:
             if isinstance(name, str):
-                load_filename = '%s_net_%s.pth' % (epoch, name)
+                load_filename = '{}_net_{}.pth' .format(epoch, name)
                 load_path = os.path.join(self.save_dir, load_filename)
                 net = getattr(self, 'net' + name)
                 if isinstance(net, torch.nn.DataParallel):
@@ -194,7 +196,7 @@ class BaseModel(ABC):
                 print('loading the model from %s' % load_path)
                 # if you are using PyTorch newer than 0.4 (e.g., built from
                 # GitHub source), you can remove str() on self.device
-                state_dict = torch.load(load_path, map_location=str(self.device))
+                state_dict = torch.load(load_path, map_location=self.device)
                 if hasattr(state_dict, '_metadata'):
                     del state_dict._metadata
 
@@ -218,14 +220,16 @@ class BaseModel(ABC):
                     num_params += param.numel()
                 if verbose:
                     print(net)
-                print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
+                print('[Network {}] Total number of parameters: {:.3f} M'.format(name, num_params / 1e6))
         print('-----------------------------------------------')
 
-    def set_requires_grad(self, nets, requires_grad=False):
-        """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
-        Parameters:
-            nets (network list)   -- a list of networks
-            requires_grad (bool)  -- whether the networks require gradients or not
+    @staticmethod
+    def set_requires_grad(nets, requires_grad=False):
+        """
+        Set requires_grad=False for all the networks to avoid unnecessary computations
+        :param nets: (list)
+        :param requires_grad: (boolean)
+        :return:
         """
         if not isinstance(nets, list):
             nets = [nets]
