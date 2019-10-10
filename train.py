@@ -28,6 +28,10 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
 
+            if total_iters % opt.display_freq == 0:
+                save_result = total_iters % opt.update_html_freq == 0
+
+
             if total_iters % opt.print_freq == 0:
                 losses = model.get_current_losses()
                 t_comp = (time.time() - iter_start_time) / opt.batch_size

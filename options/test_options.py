@@ -3,10 +3,8 @@ from .base_options import BaseOptions
 
 class TestOptions(BaseOptions):
     def __init__(self):
-        self.isTrain = False
-
-    def initialize(self, parser):
-        parser = BaseOptions.initialize(self, parser)
+        super(TestOptions, self).__init__()
+        parser = self.parser
         parser.add_argument('--n_test', type=int, default=float("inf"), help='# of test examples.')
         parser.add_argument('--results_dir', type=str, default='./results/', help='saves results here.')
         parser.add_argument('--aspect_ratio', type=float, default=1.0, help='aspect ratio of result images')
@@ -20,6 +18,7 @@ class TestOptions(BaseOptions):
         parser.set_defaults(model='test')
         parser.set_defaults(load_size=parser.get_default('crop_size'))
         self.isTrain = False
-        return parser
+        self.parser = parser
+
 
 

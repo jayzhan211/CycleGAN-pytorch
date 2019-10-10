@@ -12,7 +12,7 @@ if __name__ == '__main__':
     opt.display_id = -1  # no visdom display
     dataset = create_dataset(opt)
     model = create_model(opt)
-    model.setup()
+    model.setup(opt)
 
     # create a website
     web_dir = os.path.join(opt.results_dir, opt.name, '{}_{}'.format(opt.phase, opt.epoch))
@@ -28,7 +28,8 @@ if __name__ == '__main__':
         img_path = model.get_image_paths()
         if i % opt.save_img_freq == 0:
             print('processing ({:02d}) image... {}'.format(i, img_path))
-            save_images(web_page, visuals, img_path,  aspect_ratio=opt.aspect_ratio, image_size=opt.display_window_size)
+        save_images(web_page, visuals, img_path,  aspect_ratio=opt.aspect_ratio, image_size=opt.display_window_size)
+    web_page.save()
 
 
 

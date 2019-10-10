@@ -94,9 +94,9 @@ class Visualizer:
         :param t_data: (float) data loading time per data point / batch_size
         :return:
         """
-        message = '(epoch: {}, iters: {}, time: {}, data:{})'.format(epoch, iters, t_comp, t_data)
-        for name, loss in losses.item():
-            message += '{}: {}'.format(name, loss)
+        message = '(epoch: {}, iters: {}, time: {:.3f}, data:{:.3f})'.format(epoch, iters, t_comp, t_data)
+        for name, loss in losses.items():
+            message += ', {}: {:.3f}'.format(name, loss)
         print(message)
         with open(self.log_name, "a") as log_file:
             log_file.write('{}\n'.format(message))
@@ -110,7 +110,7 @@ class Visualizer:
         :return:
         """
 
-        self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.key())}
+        self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.keys())}
         self.plot_data['X'].append(epoch + counter_ratio)
         self.plot_data['Y'].append([losses[k] for k in self.plot_data['legend']])
         try:

@@ -9,7 +9,7 @@
                 direction: A2B                           
               display_env: main                          
              display_freq: 400                           
-               display_id: 1                             
+               display_id: 0                             
             display_ncols: 4                             
              display_port: 8097                          
            display_server: http://localhost              
@@ -17,7 +17,7 @@
                     epoch: latest                        
               epoch_count: 1                             
                  gan_mode: lsgan                         
-                  gpu_ids: -1                            
+                  gpu_ids: 0                             
                 init_gain: 0.02                          
                 init_type: normal                        
                  input_nc: 3                             

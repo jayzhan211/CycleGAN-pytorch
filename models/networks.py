@@ -47,7 +47,7 @@ def get_norm_layer(norm_type='instance'):
     elif norm_type == 'instance':
         norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
     elif norm_type == 'none':
-        norm_layer = Identity
+        norm_layer = Identity()
     else:
         raise NotImplementedError('normalization layer [{}] is not found'.format(norm_type))
     return norm_layer
@@ -107,7 +107,7 @@ class ResnetGenerator(nn.Module):
     def __init__(self, input_nc,
                  output_nc,
                  ngf=64,
-                 norm_layer=nn.BatchNorm2d,
+                 norm_layer=None,
                  use_dropout=False,
                  n_blocks=6,
                  padding_type='reflect'):
@@ -122,9 +122,10 @@ class ResnetGenerator(nn.Module):
         :param padding_type: padding in conv: reflect | replicate | zero
         """
         super(ResnetGenerator, self).__init__()
-        """
-        Question: Why add bias if norm=instance ?
-        """
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        # TODO why add bias if norm = instance ?
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
@@ -205,10 +206,10 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-def define_g(input_nc,
+def define_G(input_nc,
              output_nc,
              ngf,
-             net_g,
+             netG,
              norm='batch',
              use_dropout=False,
              init_type='normal',
@@ -230,12 +231,12 @@ def define_g(input_nc,
     use ReLU for non-linearity
     """
     norm_layer = get_norm_layer(norm_type=norm)
-    if net_g == 'resnet_9blocks':
+    if netG == 'resnet_9blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
-    elif net_g == 'resnet_6blocks':
+    elif netG == 'resnet_6blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     else:
-        raise NotImplementedError('Generator model name [{}] is not recognized'.format(net_g))
+        raise NotImplementedError('Generator model name [{}] is not recognized'.format(netG))
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
@@ -244,7 +245,7 @@ class NLayerDiscriminator(nn.Module):
                  input_nc,
                  ndf=64,
                  n_layers=3,
-                 norm_layer=nn.BatchNorm2d):
+                 norm_layer=None):
         """
         PatchGAN discriminator
         :param input_nc:
@@ -253,6 +254,9 @@ class NLayerDiscriminator(nn.Module):
         :param norm_layer:
         """
         super(NLayerDiscriminator, self).__init__()
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
 
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
@@ -266,7 +270,6 @@ class NLayerDiscriminator(nn.Module):
             nn.LeakyReLU(0.2, True)
         ]
         nf = 1
-        nf_prev = 1
         for i in range(1, n_layers):
             nf_prev = nf
             nf = min(nf * 2, 8)
@@ -289,9 +292,9 @@ class NLayerDiscriminator(nn.Module):
         return self.model(x)
 
 
-def define_d(input_nc,
+def define_D(input_nc,
              ndf,
-             net_d,
+             netD,
              n_layers_d=3,
              norm='batch',
              init_type='normal',
@@ -301,7 +304,7 @@ def define_d(input_nc,
     Discriminator,  it uses leaky relu
     :param input_nc:
     :param ndf: number of filter in the first conv layer
-    :param net_d: basic | pixel | n_layers
+    :param netD: basic | pixel | n_layers
     :param n_layers_d:
     :param norm:
     :param use_dropout:
@@ -312,11 +315,10 @@ def define_d(input_nc,
     """
     if gpu_ids is None:
         gpu_ids = []
-    net = None
     norm_layer = get_norm_layer(norm_type=norm)
-    if net_d == 'basic':  # default PatchGAN classifier
+    if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
-    elif net_d == 'n_layers':  # more options
+    elif netD == 'n_layers':  # more options
         net = NLayerDiscriminator(input_nc, ndf, n_layers_d, norm_layer=norm_layer)
     else:
         raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(net_d))
