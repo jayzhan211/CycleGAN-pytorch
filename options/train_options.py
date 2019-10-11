@@ -7,9 +7,9 @@ class TrainOptions(BaseOptions):
         parser = self.parser
         parser.add_argument('--display_freq', type=int, default=400,
                             help='frequency of showing training results on screen')
-        parser.add_argument('--display_ncols', type=int, default=4,
+        parser.add_argument('--display_nrow', type=int, default=4,
                             help='display all images in a single visdom web panel with images per row.')
-        parser.add_argument('--display_id', type=int, default=0, help='window id of the web display, 0 for not display')
+        parser.add_argument('--display_id', type=int, default=1, help='window id of the web display, 0 for not display')
         parser.add_argument('--display_server', type=str, default="http://localhost",
                             help='visdom server of the web display')
         parser.add_argument('--display_env', type=str, default='main',

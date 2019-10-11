@@ -4,7 +4,8 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra
 
 # TODO
-- [ ] generator training fails (loss over 1) 
+- [ ] visdom plot line fails
+
 
 # Command Line
 

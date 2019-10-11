@@ -64,11 +64,11 @@ class HTML:
 if __name__ == '__main__':  # we show an example usage here.
     html = HTML('web/', 'test_html')
     html.add_header('hello world')
-
+    html.add_header('welcome 4001')
     image_paths, image_names, links = [], [], []
     for n in range(4):
-        image_paths.append('image_%d.png' % n)
-        image_names.append('text_%d' % n)
-        links.append('image_%d.png' % n)
+        image_paths.append('image_{:03d}.jpg'.format(n))
+        image_names.append('text_{:03d}'.format(n))
+        links.append('image_{:03d}.jpg'.format(n))
     html.add_images(image_paths, image_paths, links)
     html.save()

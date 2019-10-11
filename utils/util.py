@@ -4,17 +4,22 @@ import numpy as np
 import torch
 
 
-def tensor2img(img, img_type=np.uint8):
-    if isinstance(img, np.ndarray):
-        return img.astype(img_type)
+def tensor2numpy(img, img_type=np.uint8):
+
     if isinstance(img, torch.Tensor):
-        img_np = img.data[0].cpu().float().numpy()
+        img_tensor = img.data
+        assert img_tensor.max() <= 1.0 and img_tensor.min() >= -1.0, 'torch.tensor is out of range [-1.0, 1.0]'
+        img_np = img_tensor[0].cpu().float().numpy()
         if img_np.shape[0] == 1:
             img_np = np.tile(img_np, (3, 1, 1))
-        img_np = np.transpose(img_np, (1, 2, 0))
-        return img_np
-    else:
+        # [-1.0, 1.0] -> [0.0, 255.0]
+        img_np = (np.transpose(img_np, (1, 2, 0)) + 1.0) / 2.0 * 255.0
+        img = img_np
+
+    elif not isinstance(img, np.ndarray):
         raise TypeError('img must be torch.Tensor or np.ndarray')
+
+    return img.astype(img_type)
 
 
 def save_image(img, img_pth, aspect_ratio=1.0):
@@ -25,6 +30,8 @@ def save_image(img, img_pth, aspect_ratio=1.0):
     :param aspect_ratio:
     :return:
     """
+    assert isinstance(img, np.ndarray), 'img should be np.ndarray, but' \
+                                        'found {} instead'.format(type(img))
     img_pil = Image.fromarray(img)
     h, w, _ = img.shape
     if aspect_ratio > 1.0:
