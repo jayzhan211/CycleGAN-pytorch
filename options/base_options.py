@@ -105,7 +105,7 @@ class BaseOptions:
         expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
         mkdir(expr_dir)
         file_name = os.path.join(expr_dir, '{}_opt.txt'.format(opt.phase))
-        with open(file_name, 'wt') as opt_file:
+        with open(file_name, 'a') as opt_file:
             opt_file.write(message)
             opt_file.write('\n')
 

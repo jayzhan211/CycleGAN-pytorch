@@ -1,5 +1,6 @@
 import torch
 import itertools
+from utils.image_pool import ImagePool
 from .base_model import BaseModel
 from . import networks
 
@@ -42,6 +43,10 @@ class CycleGANModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        """
+        specify the images you want to save/display.
+        the train   /test scripts will call <BaseModel.get_current_visuals>
+        """
         visual_names_A = ['real_A', 'fake_B', 'rec_A']
         visual_names_B = ['real_B', 'fake_A', 'rec_B']
         if self.isTrain and self.opt.lambda_identity > 0.0:
@@ -71,9 +76,9 @@ class CycleGANModel(BaseModel):
         if self.isTrain:
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert (opt.input_nc == opt.output_nc)
-            # No Image Buffer, we use the latest generated image instead.
-            # self.fake_A_pool = ImagePool(opt.pool_size)
-            # self.fake_B_pool = ImagePool(opt.pool_size)
+
+            self.fake_A_pool = ImagePool(opt.pool_size)
+            self.fake_B_pool = ImagePool(opt.pool_size)
 
             # define loss functions
             self.criterionGAN = networks.GANLoss(gan_mode=opt.gan_mode).to(self.device)  # define GAN loss.
@@ -145,8 +150,7 @@ class CycleGANModel(BaseModel):
 
     def backward_G(self):
         """
-        loss of GA and GB
-        :return:
+        Calculate the loss for generators G_A and G_B
         """
         lambda_idt = self.opt.lambda_identity
         lambda_A = self.opt.lambda_A
@@ -175,24 +179,12 @@ class CycleGANModel(BaseModel):
                       self.loss_idt_A + self.loss_idt_B
         self.loss_G.backward()
 
-    def optimization(self):
-        """
-        Calculate Loss, and update Weights
-        :return:
-        """
-        self.forward()
-        self.set_requires_grad([self.netD_A, self.netD_B], False)
-        # G
-        self.optimizer_G.zero_grad()
-        self.backward_G()
-        self.optimizer_G.step()
-        # D
-        self.set_requires_grad([self.netD_A, self.netD_B], True)
-        self.optimizer_D.zero_grad()
-        self.backward_D()
-        self.optimizer_D.step()
-
     def optimize_parameters(self):
+        """
+        Calculate losses, gradients, and update network weights
+        Called in every training iteration
+        :return: None
+        """
         self.forward()
         # G_A, G_B
         self.set_requires_grad([self.netD_A, self.netD_B], False)
@@ -206,5 +198,7 @@ class CycleGANModel(BaseModel):
         self.optimizer_D.step()
 
     def backward_D(self):
-        self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, self.fake_B)
-        self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, self.fake_A)
+        fake_B = self.fake_B_pool.query(self.fake_B)
+        self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B)
+        fake_A = self.fake_A_pool.query(self.fake_A)
+        self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)

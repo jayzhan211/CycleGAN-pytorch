@@ -16,12 +16,20 @@ class Identity(nn.Module):
 
 
 def get_scheduler(optimizer, opt):
+    """
+    Return a learning rate scheduler
+    :param optimizer:
+    :param opt: opt.lr_policy is the name of learning rate policy: linear | step | plateau | cosine
+    :return:
+    """
+    """
+    For linear, we keep the same learning rate for the first <iopt.niter> epochs
+    and linearly decay the rate to zero over the next <opt.niter_decay> epochs
+    """
     if opt.lr_policy == 'linear':
         def lambda_rule(epoch):
             lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.niter) / float(opt.niter_decay + 1)
             return lr_l
-
-        """DEBUG: check whether linear decay is correct"""
         scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     elif opt.lr_policy == 'step':
         scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
@@ -121,6 +129,7 @@ class ResnetGenerator(nn.Module):
         :param n_blocks: number of ResNet block
         :param padding_type: padding in conv: reflect | replicate | zero
         """
+        assert n_blocks >= 0, 'n_blocks: {} need to satisfy >=0'.format(n_blocks)
         super(ResnetGenerator, self).__init__()
 
         if norm_layer is None:
@@ -139,37 +148,51 @@ class ResnetGenerator(nn.Module):
         n_downsampling = 2
         for i in range(n_downsampling):  # add downsampling layers
             mult = 2 ** i
-            model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-                      norm_layer(ngf * mult * 2),
-                      nn.ReLU(True)]
+            model += [
+                nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
+                norm_layer(ngf * mult * 2),
+                nn.ReLU(True)
+            ]
         mult = 2 ** n_downsampling
         for i in range(n_blocks):  # add ResNet blocks
 
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer,
-                                  use_dropout=use_dropout, use_bias=use_bias)]
+            model += [
+                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer,
+                            use_dropout=use_dropout, use_bias=use_bias)
+            ]
 
         for i in range(n_downsampling):  # add upsampling layers
-            model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                         kernel_size=3, stride=2,
-                                         padding=1, output_padding=1,
-                                         bias=use_bias),
-                      norm_layer(int(ngf * mult / 2)),
-                      nn.ReLU(True)]
-            mult >>= 1  # mult / 2
+            mult = 2 ** (n_downsampling - i)
+            model += [
+                nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
+                                   kernel_size=3, stride=2,
+                                   padding=1, output_padding=1,
+                                   bias=use_bias),
+                norm_layer(int(ngf * mult / 2)),
+                nn.ReLU(True)
+            ]
+
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
 
-    def forward(self, input):
-        return self.model(input)
+    def forward(self, x):
+        return self.model(x)
 
 
 def init_weights(net, init_type='normal', init_gain=0.02):
+    """
+    Initialize network weights.
+    :param net: (net)
+    :param init_type: (str) normal | xavier | kaiming | orthogonal
+    :param init_gain: scaling factor for normal, xavier and orthogonal.
+    :return:
+    """
     def init_func(m):
         classname = m.__class__.__name__
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+        if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
             if init_type == 'normal':
                 init.normal_(m.weight.data, 0.0, init_gain)
             elif init_type == 'xavier':
@@ -179,9 +202,11 @@ def init_weights(net, init_type='normal', init_gain=0.02):
             elif init_type == 'orthogonal':
                 init.orthogonal_(m.weight.data, gain=init_gain)
             else:
-                raise NotImplementedError('initialization method [{}] is not implemented'.format(init_type))
-            init.constant_(m.bias.data, 0.0)
-        elif isinstance(m, nn.BatchNorm2d):
+                raise NotImplementedError('initialization method [{}] is not implemented' .format(init_type))
+            if hasattr(m, 'bias') and m.bias is not None:
+                init.constant_(m.bias.data, 0.0)
+        elif classname.find(
+                'BatchNorm2d') != -1:  # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
             init.normal_(m.weight.data, 1.0, init_gain)
             init.constant_(m.bias.data, 0.0)
 
@@ -295,7 +320,7 @@ class NLayerDiscriminator(nn.Module):
 def define_D(input_nc,
              ndf,
              netD,
-             n_layers_d=3,
+             n_layers_D=3,
              norm='batch',
              init_type='normal',
              init_gain=0.02,
@@ -313,16 +338,18 @@ def define_D(input_nc,
     :param gpu_ids:
     :return:
     """
+
     if gpu_ids is None:
         gpu_ids = []
     norm_layer = get_norm_layer(norm_type=norm)
     if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'n_layers':  # more options
-        net = NLayerDiscriminator(input_nc, ndf, n_layers_d, norm_layer=norm_layer)
+        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
     else:
-        raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(net_d))
+        raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(netD))
     return init_net(net, init_type, init_gain, gpu_ids)
+
 
 ##############################################################################
 # Classes
@@ -369,7 +396,7 @@ class GANLoss(nn.Module):
         :param target_is_real:
         :return:
         """
-        if self.gan_mode in 'lsgan':
+        if self.gan_mode in ['lsgan']:
             target_tensor = self.get_target_tensor(prediction, target_is_real)
             loss = self.loss(prediction, target_tensor)
         else:

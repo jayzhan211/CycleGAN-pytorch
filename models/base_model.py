@@ -90,7 +90,9 @@ class BaseModel(ABC):
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         if self.isTrain:
-            self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
+            self.schedulers = [
+                networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers
+            ]
         if not self.isTrain or opt.continue_train:
             load_suffix = 'iter_{}' .format(opt.load_iter) if opt.load_iter > 0 else opt.epoch
             self.load_networks(load_suffix)
@@ -111,11 +113,6 @@ class BaseModel(ABC):
         """
         with torch.no_grad():
             self.forward()
-            self.compute_visuals()
-
-    def compute_visuals(self):
-        """Calculate additional output images for visdom and HTML visualization"""
-        pass
 
     def get_image_paths(self):
         """ Return image paths that are used to load current data"""

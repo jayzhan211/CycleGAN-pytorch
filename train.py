@@ -11,13 +11,17 @@ if __name__ == '__main__':
     model = create_model(opt)
     model.setup(opt)
     visualizer = Visualizer(opt)
-    print('Training is Starting ...')
     total_iters = 0
     t_data = 0
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
+        print('Epoch_{} is starting'.format(epoch))
+        # time for entire epoch
         epoch_start_time = time.time()
+        # time of data loading
         iter_data_time = time.time()
+        # the number of training iteration in cur epoch
         epoch_iter = 0
+
         for i, data in enumerate(dataset):
             iter_start_time = time.time()
             if total_iters % opt.print_freq == 0:

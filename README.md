@@ -4,7 +4,7 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra
 
 # TODO
-- [ ] visdom plot line fails
+- [ ] compare with and w/o image_pool
 
 
 # Command Line

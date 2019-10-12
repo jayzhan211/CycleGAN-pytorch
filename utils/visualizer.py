@@ -57,7 +57,6 @@ class Visualizer:
         self.name = opt.name
         self.port = opt.display_port
         self.saved = False
-        self.plot_data = None
         if self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
             self.nrow = opt.display_nrow
@@ -110,9 +109,11 @@ class Visualizer:
         :return:
         """
 
-        self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.keys())}
+        if not hasattr(self, 'plot_data'):
+            self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.keys())}
         self.plot_data['X'].append(epoch + counter_ratio)
         self.plot_data['Y'].append([losses[k] for k in self.plot_data['legend']])
+
         try:
             self.vis.line(
                 X=np.stack([np.array(self.plot_data['X'])] * len(self.plot_data['legend']), 1),
@@ -202,22 +203,21 @@ class Visualizer:
             self.saved = True
             for label, image in visuals.items():
                 image_numpy = util.tensor2numpy(image)
-                img_path = os.path.join(self.img_dir, 'epoch{:3d}_{}.png' .format(epoch, label))
+                img_path = os.path.join(self.img_dir, 'epoch{:03d}_{}.png' .format(epoch, label))
                 util.save_image(image_numpy, img_path)
 
-            webpage = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name), refresh=1)
+            web_page = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name), refresh=1)
             for n in range(epoch, 0, -1):
-                webpage.add_header('epoch [%d]' % n)
+                web_page.add_header('epoch [{}]'.format(n))
                 ims, txts, links = [], [], []
 
-                for label, image in visuals.items():
-                    image_numpy = util.tensor2numpy(image)
-                    img_path = 'epoch%.3d_%s.png' % (n, label)
+                for label, _ in visuals.items():
+                    img_path = 'epoch{:03d}_{}.png' .format(n, label)
                     ims.append(img_path)
                     txts.append(label)
                     links.append(img_path)
-                webpage.add_images(ims, txts, links, image_size=self.win_size)
-            webpage.save()
+                web_page.add_images(ims, txts, links, image_size=self.win_size)
+            web_page.save()
 
 
 
