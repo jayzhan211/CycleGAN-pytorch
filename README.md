@@ -1,11 +1,11 @@
 # CycleGAN-pytorch
 slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)
 
-dataset: horse2zebra
+dataset: horse2zebra/sketch2Line(our private dataset)
 
 # TODO
-- [ ] compare with and w/o image_pool
-
+- [ ] for dataset/sketch2Line the discriminator is too strong.
+- [ ] add UGATIT
 
 # Command Line
 
@@ -19,6 +19,11 @@ dataset: horse2zebra
 * Test the model
 `python test.py --data_root ./horse2zebra --name h2z_cyclegan --model cycle_gan`
 
+* image preprocess
+`python image_preprocess.py  --data_root ./rakugakiicon`
+
+dataset: ./sketch2Line
+`python train.py --data_root ./sketch2Line --name s2L_cyclegan --model cycle_gan`
 
 
 

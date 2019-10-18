@@ -144,7 +144,7 @@ class CycleGANModel(BaseModel):
         pred_fake = netD(fake.detach())
         loss_D_fake = self.criterionGAN(pred_fake, target_is_real=False)
         # Combined loss and calculate gradients
-        loss_D = (loss_D_real + loss_D_fake) * 0.5
+        loss_D = (loss_D_real + loss_D_fake) * 1.0
         loss_D.backward()
         return loss_D
 
@@ -198,7 +198,9 @@ class CycleGANModel(BaseModel):
         self.optimizer_D.step()
 
     def backward_D(self):
-        fake_B = self.fake_B_pool.query(self.fake_B)
+        # fake_B = self.fake_B_pool.query(self.fake_B)
+        fake_B = self.fake_B
         self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B)
-        fake_A = self.fake_A_pool.query(self.fake_A)
+        # fake_A = self.fake_A_pool.query(self.fake_A)
+        fake_A = self.fake_A
         self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
