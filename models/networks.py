@@ -61,10 +61,29 @@ def get_norm_layer(norm_type='instance'):
         raise NotImplementedError('normalization layer [{}] is not found'.format(norm_type))
     return norm_layer
 
-
 class ResnetBlock(nn.Module):
+    """Define a Resnet block"""
+
     def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias):
+        """Initialize the Resnet block
+        A resnet block is a conv block with skip connections
+        We construct a conv block with build_conv_block function,
+        and implement skip connections in <forward> function.
+        Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
+        """
         super(ResnetBlock, self).__init__()
+        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, use_bias)
+
+    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias):
+        """Construct a convolutional block.
+        Parameters:
+            dim (int)           -- the number of channels in the conv layer.
+            padding_type (str)  -- the name of padding layer: reflect | replicate | zero
+            norm_layer          -- normalization layer
+            use_dropout (bool)  -- if use dropout layers.
+            use_bias (bool)     -- if the conv layer uses bias or not
+        Returns a conv block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
+        """
         conv_block = []
         p = 0
         if padding_type == 'reflect':
@@ -74,18 +93,11 @@ class ResnetBlock(nn.Module):
         elif padding_type == 'zero':
             p = 1
         else:
-            raise NotImplementedError('padding [{}] is not implemented'.format(padding_type))
+            raise NotImplementedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [
-            nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
-            norm_layer(dim),
-            nn.ReLU(True),
-        ]
-
+        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
         if use_dropout:
-            conv_block += [
-                nn.Dropout(0.5),
-            ]
+            conv_block += [nn.Dropout(0.5)]
 
         p = 0
         if padding_type == 'reflect':
@@ -95,13 +107,29 @@ class ResnetBlock(nn.Module):
         elif padding_type == 'zero':
             p = 1
         else:
-            raise NotImplementedError('padding [{}] is not implemented'.format(padding_type))
+            raise NotImplementedError('padding [%s] is not implemented' % padding_type)
+        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim)]
 
-        conv_block += [
-            nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
-            norm_layer(dim),
+        return nn.Sequential(*conv_block)
+
+    def forward(self, x):
+        """Forward function (with skip connections)"""
+        out = x + self.conv_block(x)  # add skip connections
+        return out
+
+
+class ResnetBlockUGATIT(nn.Module):
+    def __init__(self, dim, use_bias):
+        super(ResnetBlockUGATIT, self).__init__()
+        conv_block = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias),
+            nn.InstanceNorm2d(dim),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias),
+            nn.InstanceNorm2d(dim),
         ]
-
         self.conv_block = nn.Sequential(*conv_block)
 
     def forward(self, x):
@@ -182,48 +210,99 @@ class ResnetGenerator(nn.Module):
     def forward(self, x):
         return self.model(x)
 
+
 class AdaLIn(nn.Module):
     """
     Adaptive Layer-Instance Normalization
+    0.9 for in, 0.1 for ln in the beginning
     """
     def __init__(self, num_features, eps=1e-5):
         super(AdaLIn, self).__init__()
         self.eps = eps
-        self.rho = nn.Parameter(torch.tensor(1, num_features, 1, 1))
-        self.rho.data.fill_(0.9)
+        self.rho = nn.Parameter(torch.full((1, num_features, 1, 1), 0.9), requires_grad=True)
 
     def forward(self, x, gamma, beta):
-        in_mean, in_var = torch.mean(x, dim=(2, 3), keepdim=True), torch.var(x, dim=(2, 3), keepdim=True)
+        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
         out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
-        ln_mean, ln_var = torch.mean(x, dim=(1, 2, 3), keepdim=True), torch.var(x, dim=(1, 2, 3), keepdim=True)
+        ln_mean, ln_var = torch.mean(x, dim=[1, 2, 3], keepdim=True), torch.var(x, dim=[1, 2, 3], keepdim=True)
         out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
+        _, c, h, w = self.rho.size()
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-                    1 - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
+                    torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
         out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
-        # TODO how to remain the value of rho in range [0, 1]
-
+        return out
 
 
 class ResnetAdaLInBlock(nn.Module):
     def __init__(self, dim, use_bias):
         super(ResnetAdaLInBlock, self).__init__()
+        self.pad1 = nn.ReflectionPad2d(1)
+        self.conv1 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
+        self.norm1 = AdaLIn(dim)
+        self.relu1 = nn.ReLU(True)
+
+        self.pad2 = nn.ReflectionPad2d(1)
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
+        self.norm2 = AdaLIn(dim)
+
+    def forward(self, x, gamma, beta):
+        out = self.pad1(x)
+        out = self.conv1(out)
+        out = self.norm1(out, gamma, beta)
+        out = self.relu1(out)
+        out = self.pad2(out)
+        out = self.conv2(out)
+        out = self.norm2(out, gamma, beta)
+
+        return out + x
 
 
+class LIn(nn.Module):
+    def __init__(self, num_features, eps=1e-5):
+        super(LIn, self).__init__()
+        self.eps = eps
+        self.rho = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
+        self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
 
-class ResnetGenerator_UGATIT(nn.Module):
+    def forward(self, x):
+        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
+        out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
+        ln_mean, ln_var = torch.mean(x, dim=[1, 2, 3], keepdim=True), torch.var(x, dim=[1, 2, 3], keepdim=True)
+        out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
+        _, c, h, w = self.rho.size()
+        out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
+                torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
+        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + + self.beta.expand(x.shape[0], -1, -1, -1)
+        return out
+
+
+class ResnetGeneratorUGATIT(nn.Module):
     def __init__(self,
                  input_nc,
                  output_nc,
                  ngf=64,
-                 norm_layer=nn.InstanceNorm2d,
+                 # norm_layer=nn.InstanceNorm2d,
                  n_blocks=6,
                  img_size=256,
                  light=False,
                  padding_type='reflect',
                  use_dropout=False):
-        super(ResnetGenerator_UGATIT, self).__init__()
+        """
+        Generator
+        :param input_nc: (int) the number of channels in input images
+        :param output_nc: (int) the number of channels in output images
+        :param ngf: (int) the number of filters in the last conv layer
+        :param norm_layer:
+        :param n_blocks:
+        :param img_size:
+        :param light:
+        :param padding_type:
+        :param use_dropout:
+        """
+        super(ResnetGeneratorUGATIT, self).__init__()
 
-        self.norm_layer = norm_layer
+        # self.norm_layer = norm_layer
         self.light = light
         self.img_size = img_size
         self.n_blocks = n_blocks
@@ -231,69 +310,84 @@ class ResnetGenerator_UGATIT(nn.Module):
         self.output_nc = output_nc
         self.input_nc = input_nc
 
-        # TODO maybe try leakyrelu instead
-        downsample_block = [
+        # down-sampling
+        DownBlock = [
             nn.ReflectionPad2d(3),
-            nn.Conv2d(input_nc, output_nc, kernel_size=7, bias=False),
-            norm_layer(ngf),
+            nn.Conv2d(input_nc, ngf, kernel_size=7, bias=False),
+            nn.InstanceNorm2d(ngf),
             nn.ReLU(True),
         ]
 
         n_downsampling = 2
         for i in range(n_downsampling):
             mult = 2 ** i
-            downsample_block += [
+            DownBlock += [
                 nn.ReflectionPad2d(1),
                 nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, bias=False),
-                norm_layer(ngf * mult * 2),
+                nn.InstanceNorm2d(ngf * mult * 2),
                 nn.ReLU(True)
             ]
 
         mult = 2 ** n_downsampling
         for i in range(n_blocks):  # add ResNet blocks
-            downsample_block += [
-                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer,
-                            use_dropout=use_dropout, use_bias=False),
+            DownBlock += [
+                ResnetBlockUGATIT(ngf * mult, use_bias=False),
             ]
 
-
         # Class Activate Map
-        ## global averge pooling
+        # global average pooling
         self.gap_fc = nn.Linear(ngf * mult, 1, bias=False)
-        ## global maximum pooling
+        # global maximum pooling
         self.gmp_fc = nn.Linear(ngf * mult, 1, bias=False)
         self.conv1x1 = nn.Conv2d(ngf * mult * 2, ngf * mult, kernel_size=1)
         self.relu = nn.ReLU(True)
 
         # Gamma, Beta Block
         if self.light:
-            self.fc = nn.Sequential([
+            FC = [
                 nn.Linear(ngf * mult, ngf * mult, bias=False),
                 nn.ReLU(True),
                 nn.Linear(ngf * mult, ngf * mult, bias=False),
                 nn.ReLU(True),
-            ])
+            ]
         else:
-            self.fc = nn.Sequential([
+            FC = [
                 nn.Linear(img_size // mult * img_size // mult * ngf * mult, ngf * mult, bias=False),
                 nn.ReLU(True),
                 nn.Linear(ngf * mult, ngf * mult, bias=False),
                 nn.ReLU(True),
-            ])
+            ]
 
         self.gamma = nn.Linear(ngf * mult, ngf * mult, bias=False)
         self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
 
-        # Upsample Bottleneck
+        # Up-sampling Bottleneck
         for i in range(n_blocks):
             setattr(self, 'UpBlock1_{}'.format(i+1), ResnetAdaLInBlock(ngf * mult, use_bias=False))
 
+        # Up-sampling
+        UpBlock2 = []
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            UpBlock2 += [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, bias=False),
+                LIn(int(ngf * mult / 2)),
+                nn.ReLU(True),
+            ]
+        UpBlock2 += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, bias=False),
+            nn.Tanh()
+        ]
 
-        self.downsample_block = nn.Sequential(*downsample_block)
+        self.DownBlock = nn.Sequential(*DownBlock)
+        self.FC = nn.Sequential(*FC)
+        self.UpBlock = nn.Sequential(*UpBlock2)
 
     def forward(self, x):
-        x = self.downsample_block(x)
-
+        x = self.DownBlock(x)
         gap = F.adaptive_avg_pool2d(x, 1)
         gap_logit = self.gap_fc(gap.view(gap.shape[0], -1))
         gap_weight = list(self.gap_fc.parameters())[0]
@@ -318,6 +412,11 @@ class ResnetGenerator_UGATIT(nn.Module):
 
         gamma, beta = self.gamma(_x), self.beta(_x)
 
+        for i in range(self.n_blocks):
+            x = getattr(self, 'UpBlock1_{}'.format(i+1))(x, gamma, beta)
+        out = self.UpBlock(x)
+
+        return out, cam_logit, heatmap
 
 
 def init_weights(net, init_type='normal', init_gain=0.02):
