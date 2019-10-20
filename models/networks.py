@@ -43,24 +43,6 @@ def get_scheduler(optimizer, opt):
     return scheduler
 
 
-def get_norm_layer(norm_type='instance'):
-    """
-    :param norm_type: instance | batchnorm | none
-    :return:
-
-    for batchnorm, we use learnable affine parameters
-    for instancenorm, we dont use learnalbe affine paramters
-    """
-    if norm_type == 'batch':
-        norm_layer = functools.partial(nn.BatchNorm2d, affine=True, track_running_stats=True)
-    elif norm_type == 'instance':
-        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-    elif norm_type == 'none':
-        norm_layer = Identity()
-    else:
-        raise NotImplementedError('normalization layer [{}] is not found'.format(norm_type))
-    return norm_layer
-
 class ResnetBlock(nn.Module):
     """Define a Resnet block"""
 
@@ -161,7 +143,7 @@ class ResnetGenerator(nn.Module):
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         """
-        batchnorm has bias term already, use_bias only if we use instancenorm
+        batch_norm has bias term already, use_bias only if we use instance_norm
         """
 
         if type(norm_layer) == functools.partial:
@@ -275,6 +257,91 @@ class LIn(nn.Module):
                 torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
         out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + + self.beta.expand(x.shape[0], -1, -1, -1)
         return out
+
+
+class DiscriminatorUGATIT(nn.Module):
+    def __init__(self,
+                 input_nc,
+                 ndf=64,
+                 n_layers=5):
+        """
+        Target Discriminator
+        :param input_nc: the number of channels in input image
+        :param ndf: the number of filters in the first conv layer
+        :param n_layers:
+        5 -> 3 for down-sampling and 2 for cam
+        7 -> 5 for down-sampling and 2 for cam
+        return output of encoder, cam_logit, heatmap
+        """
+        super(DiscriminatorUGATIT, self).__init__()
+        model = [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, bias=True)
+            ),
+            nn.LeakyReLU(0.2, True),
+        ]
+
+        for i in range(n_layers - 3):
+            mult = 2 ** i
+            model += [
+                nn.ReflectionPad2d(1),
+                nn.utils.spectral_norm(
+                    nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, bias=True)
+                ),
+                nn.LeakyReLU(0.2, True),
+            ]
+        mult = 2 ** (n_layers - 3)
+        model += [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, bias=True)
+            ),
+            nn.LeakyReLU(0.2, True),
+        ]
+
+        # CAM
+        mult = 2 ** (n_layers - 2)
+        self.gap_fc = nn.utils.spectral_norm(
+            nn.Linear(ndf * mult, 1, bias=False)
+        )
+        self.gmp_fc = nn.utils.spectral_norm(
+            nn.Linear(ndf * mult, 1, bias=False)
+        )
+        self.conv1x1 = nn.Conv2d(ndf * mult * 2, ndf * mult, kernel_size=1, bias=False)
+        self.relu = nn.LeakyReLU(0.2, True)
+        self.model = nn.Sequential(*model)
+        classify = [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(ndf * mult, 1, kernel_size=4, bias=False)
+            )
+        ]
+
+        self.classify = nn.Sequential(*classify)
+
+    def forward(self, x):
+        x = self.model(x)
+
+        gap = F.adaptive_avg_pool2d(x, 1)
+        gap_logit = self.gap_fc(gap.view(x.shape[0], -1))
+        gap_weight = list(self.gap_fc.parameters())[0]
+        gap = x * gap_weight.unsqueeze(2).unsqueeze(3)
+
+        gmp = F.adaptive_max_pool2d(x, 1)
+        gmp_logit = self.gmp_fc(gmp.view(x.shape[0], -1))
+        gmp_weight = list(self.gmp_fc.parameters())[0]
+        gmp = x * gmp_weight.unsqueeze(2).unsqueeze(3)
+
+        cam_logit = torch.cat([gap_logit, gmp_logit], 1)
+        x = torch.cat([gap, gmp], 1)
+        x = self.relu(self.conv1x1(x))
+
+        heatmap = torch.sum(x, dim=1, keepdim=True)
+
+        out = self.classify(x)
+
+        return out, cam_logit, heatmap
 
 
 class ResnetGeneratorUGATIT(nn.Module):
@@ -394,7 +461,7 @@ class ResnetGeneratorUGATIT(nn.Module):
         gap = x * gap_weight.unsqueeze(2).unsqueeze(3)
 
         gmp = F.adaptive_max_pool2d(x, 1)
-        gmp_logit = self.gmp_fc(gap.view(gap.shape[0], -1))
+        gmp_logit = self.gmp_fc(gmp.view(gmp.shape[0], -1))
         gmp_weight = list(self.gmp_fc.parameters())[0]
         gmp = x * gmp_weight.unsqueeze(2).unsqueeze(3)
 
@@ -472,22 +539,22 @@ def define_G(input_nc,
              output_nc,
              ngf,
              netG,
-             norm='batch',
+             norm='none',
              use_dropout=False,
              init_type='normal',
              init_gain=0.02,
-             gpu_ids=None):
+             gpu_ids=None,):
     """
 
     :param input_nc: number of channels in input_images
-    :param output_nc: ouput_images
+    :param output_nc: number of channels output_images
     :param ngf: number of filters in last conv_layer
-    :param net_G: resnet_6 | resnet_9
+    :param net_G: resnet_9blocks | resnet_6blocks | resnet_ugatit_6blocks
     :param norm: batch_norm | instance_norm | none
     :param use_dropout:
     :param init_type: initialize method
     :param init_gain: scaling factor for normal, xavier, orthogonal
-    :param gpu_ids: e.g., 0,1,2
+    :param gpu_ids: (list or None) e.g., [0],[0, 1]
     :return:
 
     use ReLU for non-linearity
@@ -495,13 +562,26 @@ def define_G(input_nc,
     if gpu_ids is None:
         gpu_ids = []
 
-    norm_layer = get_norm_layer(norm_type=norm)
+    if norm == 'batch_norm':
+        norm_layer = nn.BatchNorm2d
+    elif norm == 'instance_norm':
+        norm_layer = nn.InstanceNorm2d
+    elif norm == 'none':
+        norm_layer = None
+    else:
+        raise NotImplementedError('norm_layer: {} is not implemented ... , '
+                                  'use batch_norm or instance_norm instead'.format(norm))
+
     if netG == 'resnet_9blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
     elif netG == 'resnet_6blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
+    elif netG == 'resnet_ugatit_6blocks':
+        net = ResnetGeneratorUGATIT(input_nc, output_nc, ngf)
     else:
-        raise NotImplementedError('Generator model name [{}] is not recognized'.format(netG))
+        raise NotImplementedError('Generator model name: {} is not recognized,'
+                                  'use [resnet_9blocks, resnet_6blocks, resnet_ugatit_6blocks]'.format(netG))
+
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
@@ -560,8 +640,8 @@ class NLayerDiscriminator(nn.Module):
 def define_D(input_nc,
              ndf,
              netD,
-             n_layers_D=3,
-             norm='batch',
+             n_layers=3,
+             norm='batch_norm',
              init_type='normal',
              init_gain=0.02,
              gpu_ids=None):
@@ -569,7 +649,7 @@ def define_D(input_nc,
     Discriminator,  it uses leaky relu
     :param input_nc:
     :param ndf: number of filter in the first conv layer
-    :param netD: basic | pixel | n_layers
+    :param netD: basic | n_layers | ugatit
     :param n_layers_d:
     :param norm:
     :param use_dropout:
@@ -581,11 +661,29 @@ def define_D(input_nc,
 
     if gpu_ids is None:
         gpu_ids = []
-    norm_layer = get_norm_layer(norm_type=norm)
+
+    if norm == 'batch_norm':
+        norm_layer = nn.BatchNorm2d
+    elif norm == 'instance_norm':
+        norm_layer = nn.InstanceNorm2d
+    elif norm == 'none':
+        norm_layer = None
+    else:
+        raise NotImplementedError('norm_layer: {} is not implemented ... , '
+                                  'use batch_norm or instance_norm instead'.format(norm))
+
     if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'n_layers':  # more options
-        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=n_layers, norm_layer=norm_layer)
+    elif netD in ['ugatit', 'UGATIT']:
+        if n_layers == 5:
+            net = DiscriminatorUGATIT(input_nc, ndf, n_layers=5)
+        elif n_layers == 7:
+            net = DiscriminatorUGATIT(input_nc, ndf, n_layers=7)
+        else:
+            raise NotImplementedError('Discriminator in UGATIT supports n_layers 5 and 7 only,'
+                                      ' you get {} instead'.format(n_layers))
     else:
         raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(netD))
     return init_net(net, init_type, init_gain, gpu_ids)

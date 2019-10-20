@@ -53,8 +53,14 @@ class BaseDataset(data.Dataset, ABC):
 
 def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, convert=True):
     transform_list = []
+
+    if not opt.no_flip:
+        if params is None:
+            transform_list.append(transforms.RandomHorizontalFlip())
+
     if gray_scale:
         transform_list.append(transforms.Grayscale(1))
+
     if 'resize' in opt.preprocess:
         out_size = [opt.load_size, opt.load_size]
         transform_list.append(transforms.Resize(out_size, method))
@@ -69,10 +75,6 @@ def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, conv
 
     if opt.preprocess == 'none':
         transform_list.append(transforms.Lambda(lambda img: __make_power_2(img, base=4, method=method)))
-
-    if not opt.no_flip:
-        if params is None:
-            transform_list.append(transforms.RandomHorizontalFlip())
 
     if convert:
         transform_list += [transforms.ToTensor()]

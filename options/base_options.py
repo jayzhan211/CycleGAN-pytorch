@@ -28,8 +28,8 @@ class BaseOptions:
                             help='# of output image channels: 3 for RGB and 1 for grayscale')
         parser.add_argument('--ngf', type=int, default=64, help='# of generator filters in the last conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='# of discriminator filters in the first conv layer')
-        parser.add_argument('--netD', type=str, default='basic',
-                            help='specify discriminator architecture [basic | n_layers]')
+        parser.add_argument('--netD', type=str, default='ugatit',
+                            help='specify discriminator architecture [basic | n_layers | ugatit]')
         parser.add_argument('--netG', type=str, default='resnet_9blocks',
                             help='specify generator architecture [resnet_9blocks | resnet_6blocks]')
         parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
