@@ -49,6 +49,8 @@ class BaseModel(ABC):
         self.metric = 0  # used for learning rate policy 'plateau'
         self.schedulers = None
 
+        self.counter = 0
+
     @staticmethod
     def modify_commandline_options(parser, is_train):
         """Add new model-specific options, and rewrite default values for existing options.
@@ -120,14 +122,16 @@ class BaseModel(ABC):
 
     def update_learning_rate(self):
         """Update learning rates for all the networks; called at the end of every epoch"""
-        for scheduler in self.schedulers:
-            if self.opt.lr_policy == 'plateau':
-                scheduler.step(self.metric)
-            else:
-                scheduler.step()
+        if self.schedulers is not None:
+            self.counter += 1
+            for scheduler in self.schedulers:
+                if self.opt.lr_policy == 'plateau':
+                    scheduler.step(self.metric)
+                else:
+                    scheduler.step()
 
-        lr = self.optimizers[0].param_groups[0]['lr']
-        print('learning rate is {0:7f}'.format(lr))
+            lr = self.optimizers[0].param_groups[0]['lr']
+            print('Epoch_{}: learning rate is {:7f}'.format(self.counter, lr))
 
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""

@@ -10,6 +10,10 @@ if __name__ == '__main__':
     dataset_size = len(dataset)
     model = create_model(opt)
     model.setup(opt)
+
+    # model.update_learning_rate()
+    # breakpoint()
+
     visualizer = Visualizer(opt)
     total_iters = 0
     t_data = 0
@@ -60,7 +64,4 @@ if __name__ == '__main__':
                                                             opt.niter + opt.niter_decay,
                                                             time.time() - epoch_start_time))
         model.update_learning_rate()
-
-
-
-
+        # print(model.optimizers[0].paramets)

@@ -31,6 +31,8 @@ def get_scheduler(optimizer, opt):
         def lambda_rule(epoch):
             lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.niter) / float(opt.niter_decay + 1)
             return lr_l
+
+        # lambda_rule = lambda epoch: 1.0 - max(0, epoch + opt.epoch_count - opt.niter) / float(opt.niter_decay + 1)
         scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     elif opt.lr_policy == 'step':
         scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
@@ -38,6 +40,8 @@ def get_scheduler(optimizer, opt):
         scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
     elif opt.lr_policy == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.niter, eta_min=0)
+    elif opt.lr_policy == 'none':
+        scheduler = None
     else:
         return NotImplementedError('learning rate policy [{}] is not implemented'.format(opt.lr_policy))
     return scheduler
@@ -198,6 +202,7 @@ class AdaLIn(nn.Module):
     Adaptive Layer-Instance Normalization
     0.9 for in, 0.1 for ln in the beginning
     """
+
     def __init__(self, num_features, eps=1e-5):
         super(AdaLIn, self).__init__()
         self.eps = eps
@@ -210,7 +215,7 @@ class AdaLIn(nn.Module):
         out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
         _, c, h, w = self.rho.size()
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-                    torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
+                torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
         out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
         return out
 
@@ -430,7 +435,7 @@ class ResnetGeneratorUGATIT(nn.Module):
 
         # Up-sampling Bottleneck
         for i in range(n_blocks):
-            setattr(self, 'UpBlock1_{}'.format(i+1), ResnetAdaLInBlock(ngf * mult, use_bias=False))
+            setattr(self, 'UpBlock1_{}'.format(i + 1), ResnetAdaLInBlock(ngf * mult, use_bias=False))
 
         # Up-sampling
         UpBlock2 = []
@@ -480,7 +485,7 @@ class ResnetGeneratorUGATIT(nn.Module):
         gamma, beta = self.gamma(_x), self.beta(_x)
 
         for i in range(self.n_blocks):
-            x = getattr(self, 'UpBlock1_{}'.format(i+1))(x, gamma, beta)
+            x = getattr(self, 'UpBlock1_{}'.format(i + 1))(x, gamma, beta)
         out = self.UpBlock(x)
 
         return out, cam_logit, heatmap
@@ -494,6 +499,7 @@ def init_weights(net, init_type='normal', init_gain=0.02):
     :param init_gain: scaling factor for normal, xavier and orthogonal.
     :return:
     """
+
     def init_func(m):
         classname = m.__class__.__name__
         if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
@@ -506,7 +512,7 @@ def init_weights(net, init_type='normal', init_gain=0.02):
             elif init_type == 'orthogonal':
                 init.orthogonal_(m.weight.data, gain=init_gain)
             else:
-                raise NotImplementedError('initialization method [{}] is not implemented' .format(init_type))
+                raise NotImplementedError('initialization method [{}] is not implemented'.format(init_type))
             if hasattr(m, 'bias') and m.bias is not None:
                 init.constant_(m.bias.data, 0.0)
         elif classname.find(
@@ -543,7 +549,7 @@ def define_G(input_nc,
              use_dropout=False,
              init_type='normal',
              init_gain=0.02,
-             gpu_ids=None,):
+             gpu_ids=None, ):
     """
 
     :param input_nc: number of channels in input_images
@@ -740,3 +746,16 @@ class GANLoss(nn.Module):
         else:
             raise NotImplementedError('gan_mode [{}] not implemented'.format(self.gan_mode))
         return loss
+
+
+class RhoClipper:
+    def __init__(self, low, high):
+        self.clip_low = low
+        self.clip_high = high
+        assert low <= high
+
+    def __call__(self, module):
+        if hasattr(module, 'rho'):
+            w = module.rho.data
+            w = w.clamp(self.clip_low, self.clip_high)
+            module.rho.data = w
