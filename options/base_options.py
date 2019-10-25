@@ -28,8 +28,6 @@ class BaseOptions:
                             help='# of output image channels: 3 for RGB and 1 for grayscale')
         parser.add_argument('--ngf', type=int, default=64, help='# of generator filters in the last conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='# of discriminator filters in the first conv layer')
-        parser.add_argument('--netD', type=str, default='basic',
-                            help='specify discriminator architecture [basic | n_layers | ugatit]')
         parser.add_argument('--norm', type=str, default='instance_norm',
                             help='specify normalization type [batch_norm | instance_norm | none]')
         parser.add_argument('--init_type', type=str, default='normal',

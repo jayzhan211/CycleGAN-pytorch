@@ -33,6 +33,8 @@ class CycleGANModel(BaseModel):
                                      'identity mapping loss. For example, if the weight of'
                                      'the identity loss should be 10 times smaller than the'
                                      'weight of the reconstruction loss, please set lambda_identity = 0.1')
+            parser.add_argument('--netD', type=str, default='basic',
+                                help='specify discriminator architecture [basic | n_layers | ugatit]')
             parser.add_argument('--netG', type=str, default='resnet_9blocks',
                                 help='specify generator architecture in CycleGAN [ resnet_9blocks | resnet_6blocks ]')
             parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')

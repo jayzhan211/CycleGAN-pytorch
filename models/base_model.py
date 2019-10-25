@@ -111,7 +111,6 @@ class BaseModel(ABC):
         """Forward function used in test time.
 
         This function wraps <forward> function in no_grad() so we don't save intermediate steps for back_propagation
-        It also calls <compute_visuals> to produce additional visualization results
         """
         with torch.no_grad():
             self.forward()

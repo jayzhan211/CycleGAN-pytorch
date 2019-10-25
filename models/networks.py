@@ -657,7 +657,7 @@ def define_D(input_nc,
     :param ndf: number of filter in the first conv layer
     :param netD: basic | n_layers | ugatit
     :param n_layers_d:
-    :param norm:
+    :param norm: batch_norm | instance_norm | spectral_norm | none
     :param use_dropout:
     :param init_type:
     :param init_gain:
@@ -672,7 +672,7 @@ def define_D(input_nc,
         norm_layer = nn.BatchNorm2d
     elif norm == 'instance_norm':
         norm_layer = nn.InstanceNorm2d
-    elif norm == 'none':
+    elif norm == 'none' or norm == 'spectral_norm':
         norm_layer = None
     else:
         raise NotImplementedError('norm_layer: {} is not implemented ... , '
@@ -682,7 +682,7 @@ def define_D(input_nc,
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'n_layers':  # more options
         net = NLayerDiscriminator(input_nc, ndf, n_layers=n_layers, norm_layer=norm_layer)
-    elif netD in ['ugatit', 'UGATIT']:
+    elif netD == 'resnet_ugatit_6blocks':
         if n_layers == 5:
             net = DiscriminatorUGATIT(input_nc, ndf, n_layers=5)
         elif n_layers == 7:
@@ -692,6 +692,7 @@ def define_D(input_nc,
                                       ' you get {} instead'.format(n_layers))
     else:
         raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(netD))
+
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
