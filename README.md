@@ -4,8 +4,7 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra/sketch2Line(our private dataset)
 
 # TODO
-- [ ] for dataset/sketch2Line the discriminator is too strong.
-- [ ] add UGATIT
+- [ ] seperate options for cyclegan and ugatit
 
 # Command Line
 
@@ -24,6 +23,10 @@ dataset: horse2zebra/sketch2Line(our private dataset)
 
 dataset: ./sketch2Line
 `python train.py --data_root ./sketch2Line --name s2L_cyclegan --model cycle_gan`
+
+UGATit
+`python train.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model ugatit`
+
 
 
 

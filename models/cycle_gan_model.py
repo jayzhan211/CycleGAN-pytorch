@@ -33,6 +33,9 @@ class CycleGANModel(BaseModel):
                                      'identity mapping loss. For example, if the weight of'
                                      'the identity loss should be 10 times smaller than the'
                                      'weight of the reconstruction loss, please set lambda_identity = 0.1')
+            parser.add_argument('--netG', type=str, default='resnet_9blocks',
+                                help='specify generator architecture in CycleGAN [ resnet_9blocks | resnet_6blocks ]')
+            parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
 
         return parser
 
@@ -57,9 +60,9 @@ class CycleGANModel(BaseModel):
             specify the models you want to save to disk,
             call <BaseModel.save_networks> and <BaseModel.load_networks>.
         """
-        self.model_names = ['G_A', 'G_B']
+        self.model_names = ['netG_A', 'netG_B']
         if self.isTrain:
-            self.model_names.extend(['D_A', 'D_B'])
+            self.model_names.extend(['netD_A', 'netD_B'])
 
         # define network
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,

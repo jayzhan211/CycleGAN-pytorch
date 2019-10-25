@@ -478,9 +478,9 @@ class ResnetGeneratorUGATIT(nn.Module):
 
         if self.light:
             _x = F.adaptive_avg_pool2d(x, 1)
-            _x = self.fc(_x.view(_x.shape[0], -1))
+            _x = self.FC(_x.view(_x.shape[0], -1))
         else:
-            _x = self.fc(x.view(x.shape[0], -1))
+            _x = self.FC(x.view(x.shape[0], -1))
 
         gamma, beta = self.gamma(_x), self.beta(_x)
 

@@ -11,9 +11,14 @@ class UGATITModel(BaseModel):
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
             parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
-            parser.add_argument('--identity_weight', type=float, default=0.5, help='weight for identity loss')
-            parser.add_argument('--cam_weight', type=float, default=10.0, help='weight for class activate map loss')
-
+            parser.add_argument('--identity_weight', type=float, default=10.0, help='weight for identity loss')
+            parser.add_argument('--cam_weight', type=float, default=1000.0, help='weight for class activate map loss')
+            parser.add_argument('--n_res', type=int, default=4, help='number of resblock')
+            parser.add_argument('--n_dis', type=int, default=6, help='number of discriminator layer')
+            parser.add_argument('--img_size', type=int, default=256, help='size of image')
+            parser.add_argument('--img_ch', type=int, default=3, help='channels of image')
+            parser.add_argument('--netG', type=str, default='resnet_ugatit_6blocks',
+                                help='specify generator architecture in ugatit [ resnet_ugatit_6blocks ]')
         return parser
 
     def __init__(self, opt):
@@ -49,13 +54,13 @@ class UGATITModel(BaseModel):
             'real_B', 'fake_A', 'rec_B', 'idt_A',
         ]
 
-        self.model_names = ['G_A', 'G_B']
+        self.model_names = ['genA2B', 'genB2A']
         if self.isTrain:
-            self.model_names.extend(['D_A', 'D_B'])
+            self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
 
         # define networks
-        self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, self.gpu_ids)
-        self.genB2A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, self.gpu_ids)
+        self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
+        self.genB2A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
         self.disGA = define_D(opt.input_nc, opt.ndf, opt.netD, n_layers=7, gpu_ids=self.gpu_ids)
         self.disGB = define_D(opt.input_nc, opt.ndf, opt.netD, n_layers=7, gpu_ids=self.gpu_ids)
         self.disLA = define_D(opt.input_nc, opt.ndf, opt.netD, n_layers=5, gpu_ids=self.gpu_ids)
@@ -81,6 +86,8 @@ class UGATITModel(BaseModel):
         # weight
         self.adv_weight = opt.adv_weight
         self.cycle_weight = opt.cycle_weight
+        self.identity_weight = opt.identity_weight
+        self.cam_weight = opt.cam_weight
 
         self.real_A = None
         self.real_B = None
@@ -172,3 +179,58 @@ class UGATITModel(BaseModel):
         self.optimizer_D.step()
 
         # Update G
+
+        self.optimizer_G.zero_grad()
+        fake_A2B, fake_A2B_cam_logit, _ = self.genA2B(self.real_A)
+        fake_B2A, fake_B2A_cam_logit, _ = self.genB2A(self.real_B)
+
+        self.fake_A2B2A, _, _ = self.genB2A(fake_A2B)
+        self.fake_B2A2B, _, _ = self.genA2B(fake_B2A)
+
+        self.fake_A2A, fake_A2A_cam_logit, _ = self.genB2A(self.real_A)
+        self.fake_B2B, fake_B2B_cam_logit, _ = self.genA2B(self.real_B)
+
+        fake_GA_logit, fake_GA_cam_logit, _ = self.disGA(fake_B2A)
+        fake_LA_logit, fake_LA_cam_logit, _ = self.disLA(fake_B2A)
+        fake_GB_logit, fake_GB_cam_logit, _ = self.disGB(fake_A2B)
+        fake_LB_logit, fake_LB_cam_logit, _ = self.disLB(fake_A2B)
+
+        self.loss_G_GA = self.MSE_loss(fake_GA_logit, torch.ones_like(fake_GA_logit).to(self.device))
+        self.loss_cam_G_GA = self.MSE_loss(fake_GA_cam_logit, torch.ones_like(fake_GA_cam_logit).to(self.device))
+        self.loss_G_LA = self.MSE_loss(fake_LA_logit, torch.ones_like(fake_LA_logit).to(self.device))
+        self.loss_cam_G_LA = self.MSE_loss(fake_LA_cam_logit, torch.ones_like(fake_LA_cam_logit).to(self.device))
+        self.loss_G_GB = self.MSE_loss(fake_GB_logit, torch.ones_like(fake_GB_logit).to(self.device))
+        self.loss_cam_G_GB = self.MSE_loss(fake_GB_cam_logit, torch.ones_like(fake_GB_cam_logit).to(self.device))
+        self.loss_G_LB = self.MSE_loss(fake_LB_logit, torch.ones_like(fake_LB_logit).to(self.device))
+        self.loss_cam_G_LB = self.MSE_loss(fake_LB_cam_logit, torch.ones_like(fake_LB_cam_logit).to(self.device))
+
+        self.loss_rec_GA = self.L1_loss(self.fake_A2B2A, self.real_A)
+        self.loss_rec_GB = self.L1_loss(self.fake_B2A2B, self.real_B)
+
+        self.loss_idt_GA = self.L1_loss(self.fake_A2A, self.real_A)
+        self.loss_idt_GB = self.L1_loss(self.fake_B2B, self.real_B)
+
+        self.loss_cam_GA = self.BCE_loss(fake_B2A_cam_logit,
+                                         torch.ones_like(fake_B2A_cam_logit).to(self.device)) + \
+                           self.BCE_loss(fake_A2A_cam_logit, torch.zeros_like(fake_A2A_cam_logit).to(self.device))
+
+        self.loss_cam_GB = self.BCE_loss(fake_A2B_cam_logit,
+                                         torch.ones_like(fake_A2B_cam_logit).to(self.device)) + \
+                           self.BCE_loss(fake_B2B_cam_logit, torch.zeros_like(fake_B2B_cam_logit).to(self.device))
+
+        self.loss_GA = self.adv_weight * (self.loss_G_GA + self.loss_cam_G_GA + self.loss_G_LA + self.loss_cam_G_LA) + \
+                       self.cycle_weight * self.loss_rec_GA + self.identity_weight * self.loss_idt_GA + self.cam_weight * self.loss_cam_GA
+
+        self.loss_GB = self.adv_weight * (self.loss_G_GB + self.loss_cam_G_GB + self.loss_G_LB + self.loss_cam_G_LB) + \
+                       self.cycle_weight * self.loss_rec_GB + self.identity_weight * self.loss_idt_GB + self.cam_weight * self.loss_cam_GB
+
+        loss_G = self.loss_GA + self.loss_GB
+        loss_G.backward()
+        self.optimizer_G.step()
+
+        self.genA2B.apply(self.RhoClipper)
+        self.genB2A.apply(self.RhoClipper)
+        # print('[{:5}/{:5}] time: {:.4f} loss_D: {:.8f}, loss_G: {:.8f}'.format())
+
+    def optimize_parameters(self):
+        self.forward()

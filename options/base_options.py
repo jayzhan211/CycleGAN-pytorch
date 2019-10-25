@@ -17,7 +17,7 @@ class BaseOptions:
         parser.add_argument('--name', type=str, default='experiment_name',
                             help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--gpu_ids', type=str, default='-1',
-                            help='gpu_ids: e.g. "0","0,1,2","0,2", use "-1" for CPU')
+                            help='gpu_ids(str) e.g. "0", "0,1,2", "0,2", use "-1" for CPU')
         parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         # model parameters
         parser.add_argument('--model', type=str, default='cycle_gan',
@@ -30,10 +30,6 @@ class BaseOptions:
         parser.add_argument('--ndf', type=int, default=64, help='# of discriminator filters in the first conv layer')
         parser.add_argument('--netD', type=str, default='basic',
                             help='specify discriminator architecture [basic | n_layers | ugatit]')
-        parser.add_argument('--netG', type=str, default='resnet_9blocks',
-                            help='specify generator architecture [resnet_9blocks | resnet_6blocks |'
-                                 ' resnet_ugatit_6blocks]')
-        parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
         parser.add_argument('--norm', type=str, default='instance_norm',
                             help='specify normalization type [batch_norm | instance_norm | none]')
         parser.add_argument('--init_type', type=str, default='normal',
@@ -48,7 +44,7 @@ class BaseOptions:
         parser.add_argument('--serial_batches', action='store_true',
                             help='if true, takes images in order to make batches, otherwise takes them randomly')
         parser.add_argument('--num_threads', default=4, type=int, help='# threads for loading data')
-        parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
+        parser.add_argument('--batch_size', type=int, default=1, help='batch size')
         parser.add_argument('--load_size', type=int, default=286, help='scale images to this size')
         parser.add_argument('--crop_size', type=int, default=256, help='then crop to this size')
         parser.add_argument('--max_dataset_size', type=int, default=float("inf"),
@@ -68,6 +64,8 @@ class BaseOptions:
                             help='if specified, print more debugging information')
         parser.add_argument('--suffix', default='', type=str,
                             help='customized suffix: opt.name = opt.name + suffix: e.g. {model}_{netG}_size{load_size}')
+        parser.add_argument('--light', action='store_true',
+                            help='use light model for UGATIT')
 
         self.parser = parser
         self.isTrain = False
