@@ -59,3 +59,5 @@ def mkdir(pth):
         raise NotImplementedError('path must be list|str')
 
 
+def str2bool(x):
+    return x.lower() == 'true'

@@ -5,7 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 print(torch.__version__)
 
-z = int(551099.51)
-# z.append(3, 5, 2, 6, 2)
-# print(z)
-print('{:10d}'.format(z))
+x = nn.Parameter(torch.rand(1, 4, 1, 1))
+print(x)
+y = torch.ones_like(x) - x
+print(y)
+z = 1 - x
+print(z)

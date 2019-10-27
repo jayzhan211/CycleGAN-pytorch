@@ -34,7 +34,7 @@ class CycleGANModel(BaseModel):
                                      'the identity loss should be 10 times smaller than the'
                                      'weight of the reconstruction loss, please set lambda_identity = 0.1')
             parser.add_argument('--netD', type=str, default='basic',
-                                help='specify discriminator architecture [basic | n_layers | ugatit]')
+                                help='specify discriminator architecture [basic | n_layers')
             parser.add_argument('--netG', type=str, default='resnet_9blocks',
                                 help='specify generator architecture in CycleGAN [ resnet_9blocks | resnet_6blocks ]')
             parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
@@ -67,10 +67,12 @@ class CycleGANModel(BaseModel):
             self.model_names.extend(['netD_A', 'netD_B'])
 
         # define network
-        self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
+                                        device=self.device, norm=opt.norm, use_dropout=not opt.no_dropout,
+                                        init_type=opt.init_type, init_gain=opt.init_gain)
+        self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
+                                        device=self.device, norm=opt.norm, use_dropout=not opt.no_dropout,
+                                        init_type=opt.init_type, init_gain=opt.init_gain)
 
         if self.isTrain:  # define discriminators
             self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
@@ -82,8 +84,8 @@ class CycleGANModel(BaseModel):
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert (opt.input_nc == opt.output_nc)
 
-            self.fake_A_pool = ImagePool(opt.pool_size)
-            self.fake_B_pool = ImagePool(opt.pool_size)
+            # self.fake_A_pool = ImagePool(opt.pool_size)
+            # self.fake_B_pool = ImagePool(opt.pool_size)
 
             # define loss functions
             self.criterionGAN = networks.GANLoss(gan_mode=opt.gan_mode).to(self.device)  # define GAN loss.

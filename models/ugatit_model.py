@@ -1,7 +1,7 @@
 import itertools
-
 from .base_model import BaseModel
 from .networks import *
+from utils.util import str2bool
 
 
 class UGATITModel(BaseModel):
@@ -10,17 +10,19 @@ class UGATITModel(BaseModel):
         parser.set_defaults(no_dropout=True)
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
-            parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
-            parser.add_argument('--identity_weight', type=float, default=10.0, help='weight for identity loss')
-            parser.add_argument('--cam_weight', type=float, default=1000.0, help='weight for class activate map loss')
+            parser.add_argument('--cycle_weight', type=float, default=1.0, help='weight for cycle loss')
+            parser.add_argument('--identity_weight', type=float, default=1000.0, help='weight for identity loss')
+            parser.add_argument('--cam_weight', type=float, default=1.0, help='weight for class activate map loss')
             parser.add_argument('--n_res', type=int, default=4, help='number of resblock')
             parser.add_argument('--n_dis', type=int, default=6, help='number of discriminator layer')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
             parser.add_argument('--img_ch', type=int, default=3, help='channels of image')
             parser.add_argument('--netG', type=str, default='resnet_ugatit_6blocks',
                                 help='specify generator architecture in ugatit [ resnet_ugatit_6blocks ]')
-            parser.add_argument('--netD', type=str, default='basic',
-                                help='specify discriminator architecture [basic | n_layers | ugatit]')
+            parser.add_argument('--netD', type=str, default='UGATIT',
+                                help='specify discriminator architecture in ugatit [UGATIT]')
+            parser.add_argument('--light', type=str2bool, default=False,
+                                help='use light model for UGATIT')
 
         return parser
 
@@ -31,26 +33,24 @@ class UGATITModel(BaseModel):
             'G_B',
             'D_A',
             'D_B',
-            'rec_GA',
-            'rec_GB',
-            'idt_GA',
-            'idt_GB',
-            'cam_GA',
-            'cam_GB',
+            'rec_G_A',
+            'rec_G_B',
+            'idt_G_A',
+            'idt_G_B',
+            'cam_G_A',
+            'cam_G_B',
         ]
-
-        self.visual_names = [
-            'real_A', 'fake_A2B', 'fake_A2B2A', 'fake_A2A',
-            'real_B', 'fake_B2A', 'fake_B2A2B', 'fake_B2B',
-        ]
+        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2B2A', 'fake_A2A']
+        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2A2B', 'fake_B2B']
+        self.visual_names = visual_names_A + visual_names_B
 
         self.model_names = ['genA2B', 'genB2A']
         if self.isTrain:
             self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
 
         # define networks
-        self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
-        self.genB2A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
+        self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids, light=opt.light)
+        self.genB2A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids, light=opt.light)
         self.disGA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         self.disGB = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         self.disLA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=5, gpu_ids=self.gpu_ids)
@@ -211,7 +211,6 @@ class UGATITModel(BaseModel):
 
         self.genA2B.apply(self.RhoClipper)
         self.genB2A.apply(self.RhoClipper)
-        # print('[{:5}/{:5}] time: {:.4f} loss_D: {:.8f}, loss_G: {:.8f}'.format())
 
     def optimize_parameters(self):
         self.forward()

@@ -26,6 +26,7 @@ dataset: ./sketch2Line
 
 UGATit
 `python train.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model ugatit`
+python train.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model ugatit --light True
 
 
 

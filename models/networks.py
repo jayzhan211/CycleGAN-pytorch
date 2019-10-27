@@ -144,16 +144,11 @@ class ResnetGenerator(nn.Module):
         assert n_blocks >= 0, 'n_blocks: {} need to satisfy >=0'.format(n_blocks)
         super(ResnetGenerator, self).__init__()
 
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
         """
         batch_norm has bias term already, use_bias only if we use instance_norm
         """
 
-        if type(norm_layer) == functools.partial:
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
+        use_bias = norm_layer == nn.InstanceNorm2d
 
         model = [nn.ReflectionPad2d(3),
                  nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
@@ -206,7 +201,7 @@ class AdaLIn(nn.Module):
     def __init__(self, num_features, eps=1e-5):
         super(AdaLIn, self).__init__()
         self.eps = eps
-        self.rho = nn.Parameter(torch.full((1, num_features, 1, 1), 0.9), requires_grad=True)
+        self.rho = nn.Parameter(torch.full((1, num_features, 1, 1), 0.9))
 
     def forward(self, x, gamma, beta):
         in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
@@ -215,7 +210,7 @@ class AdaLIn(nn.Module):
         out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
         _, c, h, w = self.rho.size()
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-                torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
+               - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
         out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
         return out
 
@@ -248,9 +243,10 @@ class LIn(nn.Module):
     def __init__(self, num_features, eps=1e-5):
         super(LIn, self).__init__()
         self.eps = eps
-        self.rho = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
-        self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1), requires_grad=True)
-        self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
+
+        self.rho = nn.Parameter(torch.zeros(1, num_features, 1, 1))
+        self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1))
+        self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1))
 
     def forward(self, x):
         in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
@@ -259,8 +255,8 @@ class LIn(nn.Module):
         out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
         _, c, h, w = self.rho.size()
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-                torch.ones(x.shape[0], c, h, w) - self.rho.expand(x.shape[0], -1, -1, -1)) * out_ln
-        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + + self.beta.expand(x.shape[0], -1, -1, -1)
+                - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
+        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + self.beta.expand(x.shape[0], -1, -1, -1)
         return out
 
 
@@ -353,13 +349,10 @@ class ResnetGeneratorUGATIT(nn.Module):
     def __init__(self,
                  input_nc,
                  output_nc,
-                 ngf=64,
-                 # norm_layer=nn.InstanceNorm2d,
+                 ngf,
                  n_blocks=6,
                  img_size=256,
-                 light=False,
-                 padding_type='reflect',
-                 use_dropout=False):
+                 light=False):
         """
         Generator
         :param input_nc: (int) the number of channels in input images
@@ -545,13 +538,15 @@ def define_G(input_nc,
              output_nc,
              ngf,
              netG,
+             gpu_ids=None,
              norm='none',
              use_dropout=False,
              init_type='normal',
              init_gain=0.02,
-             gpu_ids=None, ):
+             light=False):
     """
 
+    :param light: UGATIT light mode
     :param input_nc: number of channels in input_images
     :param output_nc: number of channels output_images
     :param ngf: number of filters in last conv_layer
@@ -565,6 +560,7 @@ def define_G(input_nc,
 
     use ReLU for non-linearity
     """
+
     if gpu_ids is None:
         gpu_ids = []
 
@@ -583,7 +579,7 @@ def define_G(input_nc,
     elif netG == 'resnet_6blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'resnet_ugatit_6blocks':
-        net = ResnetGeneratorUGATIT(input_nc, output_nc, ngf)
+        net = ResnetGeneratorUGATIT(input_nc, output_nc, ngf=ngf, light=light)
     else:
         raise NotImplementedError('Generator model name: {} is not recognized,'
                                   'use [resnet_9blocks, resnet_6blocks, resnet_ugatit_6blocks]'.format(netG))
@@ -682,7 +678,7 @@ def define_D(input_nc,
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'n_layers':  # more options
         net = NLayerDiscriminator(input_nc, ndf, n_layers=n_layers, norm_layer=norm_layer)
-    elif netD == 'resnet_ugatit_6blocks':
+    elif netD in ['UGATIT', 'ugatit']:
         if n_layers == 5:
             net = DiscriminatorUGATIT(input_nc, ndf, n_layers=5)
         elif n_layers == 7:
