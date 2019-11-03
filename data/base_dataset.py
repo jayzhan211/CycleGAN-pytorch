@@ -51,15 +51,14 @@ class BaseDataset(data.Dataset, ABC):
         pass
 
 
-def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, convert=True):
+def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, convert=True, use_gray2rgb=False):
     transform_list = []
+    if gray_scale:
+        transform_list.append(transforms.Grayscale(1))
 
     if not opt.no_flip:
         if params is None:
             transform_list.append(transforms.RandomHorizontalFlip())
-
-    if gray_scale:
-        transform_list.append(transforms.Grayscale(1))
 
     if 'resize' in opt.preprocess:
         out_size = [opt.load_size, opt.load_size]
@@ -82,7 +81,19 @@ def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, conv
             transform_list += [transforms.Normalize((0.5,), (0.5,))]
         else:
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+
+    if use_gray2rgb:
+        transform_list += [
+            transforms.Lambda(lambda img: gray2rgb(img))
+        ]
+
     return transforms.Compose(transform_list)
+
+
+def gray2rgb(img):
+    h, w = img.size
+    img = img.view(h, w, 1).expand(-1, -1, 3)
+    return img
 
 
 def __make_power_2(img, base, method=Image.BICUBIC):
@@ -102,5 +113,5 @@ def __print_size_warning(ow, oh, w, h):
         print("The image size needs to be a multiple of 4. "
               "The loaded image size was ({}, {}), so it was adjusted to "
               "({}, {}). This adjustment will be done to all images "
-              "whose sizes are not multiples of 4" .format(ow, oh, w, h))
+              "whose sizes are not multiples of 4".format(ow, oh, w, h))
         __print_size_warning.has_printed = True

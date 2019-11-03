@@ -68,10 +68,10 @@ class CycleGANModel(BaseModel):
 
         # define network
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
-                                        device=self.device, norm=opt.norm, use_dropout=not opt.no_dropout,
+                                        norm=opt.norm, use_dropout=not opt.no_dropout,
                                         init_type=opt.init_type, init_gain=opt.init_gain)
         self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
-                                        device=self.device, norm=opt.norm, use_dropout=not opt.no_dropout,
+                                        norm=opt.norm, use_dropout=not opt.no_dropout,
                                         init_type=opt.init_type, init_gain=opt.init_gain)
 
         if self.isTrain:  # define discriminators

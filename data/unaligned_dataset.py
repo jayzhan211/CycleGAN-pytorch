@@ -7,8 +7,8 @@ import os
 
 class UnalignedDataset(BaseDataset):
     def __init__(self, opt):
-        # super(UnalignedDataset, self).__init__(opt)
-        BaseDataset.__init__(self, opt)
+        super(UnalignedDataset, self).__init__()
+        # BaseDataset.__init__(self, opt)
         self.dir_A = os.path.join(opt.data_root, opt.phase + 'A')
         self.dir_B = os.path.join(opt.data_root, opt.phase + 'B')
 
@@ -39,6 +39,7 @@ class UnalignedDataset(BaseDataset):
         B_path = self.B_paths[index_B]
         A_img = Image.open(A_path).convert('RGB')
         B_img = Image.open(B_path).convert('RGB')
+
         A = self.transform_A(A_img)
         B = self.transform_B(B_img)
 

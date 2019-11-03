@@ -210,7 +210,7 @@ class AdaLIn(nn.Module):
         out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
         _, c, h, w = self.rho.size()
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-               - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
+                - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
         out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
         return out
 
@@ -534,6 +534,84 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
+class ResnetGeneratorColorizatoin(nn.Module):
+    def __init__(self,
+                 input_nc,
+                 output_nc,
+                 ngf,
+                 norm_layer=nn.InstanceNorm2d,
+                 use_dropout=False,
+                 n_blocks=6,
+                 padding_type='reflect'):
+        """
+        CycleGAN_based with Colorization ref: https://arxiv.org/abs/1909.08313
+
+
+
+        :param input_nc:
+        :param output_nc:
+        :param ngf:
+        :param norm_layer:
+        :param use_dropout:
+        :param n_blocks:
+        :param padding_type:
+        """
+        super(ResnetGeneratorColorizatoin, self).__init__()
+        use_bias = False
+
+        # DownSample
+        downsampling_block = [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.InstanceNorm2d(ngf),
+            nn.ReLU(True)
+        ]
+        n_downsampling = 2
+        for i in range(n_downsampling):
+            mult = 2 ** i
+            downsampling_block += [
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=0, bias=use_bias),
+                norm_layer(ngf * mult * 2),
+                nn.ReLU(True)
+            ]
+        mult = 2 ** n_downsampling
+        for i in range(n_blocks):
+            downsampling_block += [
+                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
+                            use_bias=use_bias)
+            ]
+
+        # TODO: ADD AdaIn to stylize source_RGB
+
+        # UpSampling
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            model += [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
+                norm_layer(int(ngf * mult / 2)),
+                nn.ReLU(True)
+            ]
+
+        model += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.Tanh()
+        ]
+        self.DownSample = nn.Sequential(*model)
+
+    def forward(self, img_rgb, img_gray):
+        """
+        img_gray -> target_gray style colorization to img_rgb
+        :param img_rgb:
+        :param img_gray:
+        :return:
+        """
+        return self.model(img_gray)
+
+
 def define_G(input_nc,
              output_nc,
              ngf,
@@ -545,12 +623,11 @@ def define_G(input_nc,
              init_gain=0.02,
              light=False):
     """
-
+    :param netG: Generator_name
     :param light: UGATIT light mode
     :param input_nc: number of channels in input_images
     :param output_nc: number of channels output_images
     :param ngf: number of filters in last conv_layer
-    :param net_G: resnet_9blocks | resnet_6blocks | resnet_ugatit_6blocks
     :param norm: batch_norm | instance_norm | none
     :param use_dropout:
     :param init_type: initialize method
@@ -580,6 +657,8 @@ def define_G(input_nc,
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'resnet_ugatit_6blocks':
         net = ResnetGeneratorUGATIT(input_nc, output_nc, ngf=ngf, light=light)
+    elif netG == 'resnet_6blocks_colorization':
+        net = ResnetGeneratorColorizatoin(input_nc, output_nc, ngf=ngf)
     else:
         raise NotImplementedError('Generator model name: {} is not recognized,'
                                   'use [resnet_9blocks, resnet_6blocks, resnet_ugatit_6blocks]'.format(netG))
