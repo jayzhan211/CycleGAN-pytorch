@@ -201,7 +201,7 @@ class AdaLIn(nn.Module):
     def __init__(self, num_features, eps=1e-5):
         super(AdaLIn, self).__init__()
         self.eps = eps
-        self.rho = nn.Parameter(torch.full((1, num_features, 1, 1), 0.9))
+        self.rho = nn.Parameter(torch.full((1, num_features, 1, 1), 0.9), requires_grad=True)
 
     def forward(self, x, gamma, beta):
         in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
@@ -212,6 +212,47 @@ class AdaLIn(nn.Module):
         out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
                 - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
         out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
+        return out
+
+
+class AdaIn(nn.Module):
+    def __init__(self, eps=1e-5):
+        super(AdaIn, self).__init__()
+        self.eps = eps
+
+    def forward(self, x, gamma, beta):
+        """
+        Adaptive Instance Normalization
+        :param x: size = b, c, h, w
+        :param gamma: b, c
+        :param beta: b, c
+        :return:
+        """
+        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
+        out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
+        out_in = out_in.expand(x.shape[0], -1, -1, -1)
+        out = out_in * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
+        return out
+
+
+class LIn(nn.Module):
+    def __init__(self, num_features, eps=1e-5):
+        super(LIn, self).__init__()
+        self.eps = eps
+
+        self.rho = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
+        self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1), requires_grad=True)
+
+    def forward(self, x):
+        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
+        out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
+        ln_mean, ln_var = torch.mean(x, dim=[1, 2, 3], keepdim=True), torch.var(x, dim=[1, 2, 3], keepdim=True)
+        out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
+        _, c, h, w = self.rho.size()
+        out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
+                - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
+        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + self.beta.expand(x.shape[0], -1, -1, -1)
         return out
 
 
@@ -239,110 +280,28 @@ class ResnetAdaLInBlock(nn.Module):
         return out + x
 
 
-class LIn(nn.Module):
-    def __init__(self, num_features, eps=1e-5):
-        super(LIn, self).__init__()
-        self.eps = eps
+class ResnetAdaInBlock(nn.Module):
+    def __init__(self, dim, use_bias):
+        super(ResnetAdaInBlock, self).__init__()
+        self.pad1 = nn.ReflectionPad2d(1)
+        self.conv1 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
+        self.norm1 = AdaIn()
+        self.relu1 = nn.ReLU(True)
 
-        self.rho = nn.Parameter(torch.zeros(1, num_features, 1, 1))
-        self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1))
-        self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1))
+        self.pad2 = nn.ReflectionPad2d(1)
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
+        self.norm2 = AdaIn(dim)
 
-    def forward(self, x):
-        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
-        out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
-        ln_mean, ln_var = torch.mean(x, dim=[1, 2, 3], keepdim=True), torch.var(x, dim=[1, 2, 3], keepdim=True)
-        out_ln = (x - ln_mean) / torch.sqrt(ln_var + self.eps)
-        _, c, h, w = self.rho.size()
-        out = self.rho.expand(x.shape[0], -1, -1, -1) * out_in + (
-                - self.rho.expand(x.shape[0], -1, -1, -1) + 1.0) * out_ln
-        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + self.beta.expand(x.shape[0], -1, -1, -1)
-        return out
+    def forward(self, x, gamma, beta):
+        out = self.pad1(x)
+        out = self.conv1(out)
+        out = self.norm1(out, gamma, beta)
+        out = self.relu1(out)
+        out = self.pad2(out)
+        out = self.conv2(out)
+        out = self.norm2(out, gamma, beta)
 
-
-class DiscriminatorUGATIT(nn.Module):
-    def __init__(self,
-                 input_nc,
-                 ndf=64,
-                 n_layers=5):
-        """
-        Target Discriminator
-        :param input_nc: the number of channels in input image
-        :param ndf: the number of filters in the first conv layer
-        :param n_layers:
-        5 -> 3 for down-sampling and 2 for cam
-        7 -> 5 for down-sampling and 2 for cam
-        return output of encoder, cam_logit, heatmap
-        """
-        super(DiscriminatorUGATIT, self).__init__()
-        model = [
-            nn.ReflectionPad2d(1),
-            nn.utils.spectral_norm(
-                nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, bias=True)
-            ),
-            nn.LeakyReLU(0.2, True),
-        ]
-
-        for i in range(n_layers - 3):
-            mult = 2 ** i
-            model += [
-                nn.ReflectionPad2d(1),
-                nn.utils.spectral_norm(
-                    nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, bias=True)
-                ),
-                nn.LeakyReLU(0.2, True),
-            ]
-        mult = 2 ** (n_layers - 3)
-        model += [
-            nn.ReflectionPad2d(1),
-            nn.utils.spectral_norm(
-                nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, bias=True)
-            ),
-            nn.LeakyReLU(0.2, True),
-        ]
-
-        # CAM
-        mult = 2 ** (n_layers - 2)
-        self.gap_fc = nn.utils.spectral_norm(
-            nn.Linear(ndf * mult, 1, bias=False)
-        )
-        self.gmp_fc = nn.utils.spectral_norm(
-            nn.Linear(ndf * mult, 1, bias=False)
-        )
-        self.conv1x1 = nn.Conv2d(ndf * mult * 2, ndf * mult, kernel_size=1, bias=False)
-        self.relu = nn.LeakyReLU(0.2, True)
-        self.model = nn.Sequential(*model)
-        classify = [
-            nn.ReflectionPad2d(1),
-            nn.utils.spectral_norm(
-                nn.Conv2d(ndf * mult, 1, kernel_size=4, bias=False)
-            )
-        ]
-
-        self.classify = nn.Sequential(*classify)
-
-    def forward(self, x):
-        x = self.model(x)
-
-        gap = F.adaptive_avg_pool2d(x, 1)
-        gap_logit = self.gap_fc(gap.view(x.shape[0], -1))
-        gap_weight = list(self.gap_fc.parameters())[0]
-        gap = x * gap_weight.unsqueeze(2).unsqueeze(3)
-
-        gmp = F.adaptive_max_pool2d(x, 1)
-        gmp_logit = self.gmp_fc(gmp.view(x.shape[0], -1))
-        gmp_weight = list(self.gmp_fc.parameters())[0]
-        gmp = x * gmp_weight.unsqueeze(2).unsqueeze(3)
-
-        cam_logit = torch.cat([gap_logit, gmp_logit], 1)
-        x = torch.cat([gap, gmp], 1)
-        x = self.relu(self.conv1x1(x))
-
-        heatmap = torch.sum(x, dim=1, keepdim=True)
-
-        out = self.classify(x)
-
-        return out, cam_logit, heatmap
+        return out + x
 
 
 class ResnetGeneratorUGATIT(nn.Module):
@@ -484,6 +443,247 @@ class ResnetGeneratorUGATIT(nn.Module):
         return out, cam_logit, heatmap
 
 
+class ResnetGeneratorColorizatoin(nn.Module):
+    def __init__(self,
+                 input_nc,
+                 output_nc,
+                 ngf,
+                 norm_layer=nn.InstanceNorm2d,
+                 use_dropout=False,
+                 img_size=256,
+                 n_blocks=6,
+                 padding_type='reflect'):
+        """
+        CycleGAN_based with Colorization ref: https://arxiv.org/abs/1909.08313
+
+        :type img_size:
+        :param input_nc:
+        :param output_nc:
+        :param ngf:
+        :param norm_layer:
+        :param use_dropout:
+        :param n_blocks:
+        :param padding_type:
+        """
+        super(ResnetGeneratorColorizatoin, self).__init__()
+        use_bias = False
+
+        # DownSample
+        DownBlock = [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.InstanceNorm2d(ngf),
+            nn.ReLU(True)
+        ]
+        n_downsampling = 2
+        for i in range(n_downsampling):
+            mult = 2 ** i
+            DownBlock += [
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=0, bias=use_bias),
+                norm_layer(ngf * mult * 2),
+                nn.ReLU(True)
+            ]
+        mult = 2 ** n_downsampling
+        for i in range(n_blocks):
+            DownBlock += [
+                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
+                            use_bias=use_bias)
+            ]
+
+        # Up-sampling Bottleneck
+        for i in range(n_blocks):
+            setattr(self, 'AdaInBlock_{}'.format(i + 1), ResnetAdaInBlock(ngf * mult, use_bias=False))
+
+        fc = [
+            nn.Linear(img_size // mult * img_size // mult * ngf * mult, ngf * mult, bias=False),
+            nn.ReLU(True),
+            nn.Linear(ngf * mult, ngf * mult, bias=False),
+            nn.ReLU(True),
+        ]
+
+        self.gamma = nn.Linear(ngf * mult, ngf * mult, bias=False)
+        self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
+
+        # UpSampling
+        UpBlock = []
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            UpBlock += [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
+                norm_layer(int(ngf * mult / 2)),
+                nn.ReLU(True)
+            ]
+
+        UpBlock += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.Tanh()
+        ]
+
+        self.DownSample = nn.Sequential(*DownBlock)
+        self.FC = nn.Sequential(*fc)
+        self.UpSample = nn.Sequential(*UpBlock)
+
+    def forward(self, img_rgb, img_gray):
+        """
+        img_gray -> target_gray style colorization to img_rgb
+        :param img_rgb:
+        :param img_gray:
+        :return:
+        """
+        img = self.DownSample(img_gray)
+        _img = self.FC(img_rgb.view(img_rgb.shape[0], -1))
+
+        gamma = self.gamma(_img)
+        beta = self.beta(_img)
+
+        for i in range(self.n_blocks):
+            img = getattr(self, 'UpBlock1_{}'.format(i + 1))(img, gamma, beta)
+        out = self.UpBlock(img)
+
+        return out
+
+
+class DiscriminatorUGATIT(nn.Module):
+    def __init__(self,
+                 input_nc,
+                 ndf=64,
+                 n_layers=5):
+        """
+        Target Discriminator
+        :param input_nc: the number of channels in input image
+        :param ndf: the number of filters in the first conv layer
+        :param n_layers:
+        5 -> 3 for down-sampling and 2 for cam
+        7 -> 5 for down-sampling and 2 for cam
+        return output of encoder, cam_logit, heatmap
+        """
+        super(DiscriminatorUGATIT, self).__init__()
+        model = [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, bias=True)
+            ),
+            nn.LeakyReLU(0.2, True),
+        ]
+
+        for i in range(n_layers - 3):
+            mult = 2 ** i
+            model += [
+                nn.ReflectionPad2d(1),
+                nn.utils.spectral_norm(
+                    nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, bias=True)
+                ),
+                nn.LeakyReLU(0.2, True),
+            ]
+        mult = 2 ** (n_layers - 3)
+        model += [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, bias=True)
+            ),
+            nn.LeakyReLU(0.2, True),
+        ]
+
+        # CAM
+        mult = 2 ** (n_layers - 2)
+        self.gap_fc = nn.utils.spectral_norm(
+            nn.Linear(ndf * mult, 1, bias=False)
+        )
+        self.gmp_fc = nn.utils.spectral_norm(
+            nn.Linear(ndf * mult, 1, bias=False)
+        )
+        self.conv1x1 = nn.Conv2d(ndf * mult * 2, ndf * mult, kernel_size=1, bias=False)
+        self.relu = nn.LeakyReLU(0.2, True)
+        self.model = nn.Sequential(*model)
+        classify = [
+            nn.ReflectionPad2d(1),
+            nn.utils.spectral_norm(
+                nn.Conv2d(ndf * mult, 1, kernel_size=4, bias=False)
+            )
+        ]
+
+        self.classify = nn.Sequential(*classify)
+
+    def forward(self, x):
+        x = self.model(x)
+
+        gap = F.adaptive_avg_pool2d(x, 1)
+        gap_logit = self.gap_fc(gap.view(x.shape[0], -1))
+        gap_weight = list(self.gap_fc.parameters())[0]
+        gap = x * gap_weight.unsqueeze(2).unsqueeze(3)
+
+        gmp = F.adaptive_max_pool2d(x, 1)
+        gmp_logit = self.gmp_fc(gmp.view(x.shape[0], -1))
+        gmp_weight = list(self.gmp_fc.parameters())[0]
+        gmp = x * gmp_weight.unsqueeze(2).unsqueeze(3)
+
+        cam_logit = torch.cat([gap_logit, gmp_logit], 1)
+        x = torch.cat([gap, gmp], 1)
+        x = self.relu(self.conv1x1(x))
+
+        heatmap = torch.sum(x, dim=1, keepdim=True)
+
+        out = self.classify(x)
+
+        return out, cam_logit, heatmap
+
+
+class NLayerDiscriminator(nn.Module):
+    def __init__(self,
+                 input_nc,
+                 ndf=64,
+                 n_layers=3,
+                 norm_layer=None):
+        """
+        PatchGAN discriminator
+        :param input_nc:
+        :param ndf:
+        :param n_layers:
+        :param norm_layer:
+        """
+        super(NLayerDiscriminator, self).__init__()
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kernel_size = 4
+        padding = 1
+        sequence = [
+            nn.Conv2d(input_nc, ndf, kernel_size=kernel_size, stride=2, padding=padding),
+            nn.LeakyReLU(0.2, True)
+        ]
+        nf = 1
+        for i in range(1, n_layers):
+            nf_prev = nf
+            nf = min(nf * 2, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=2, padding=padding, bias=use_bias),
+                norm_layer(ndf * nf),
+                nn.LeakyReLU(0.2, True)
+            ]
+        nf_prev = nf
+        nf = min(nf * 2, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=1, padding=padding, bias=use_bias),
+            norm_layer(ndf * nf),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(ndf * nf, 1, kernel_size=kernel_size, stride=1, padding=padding)
+        ]
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, x):
+        return self.model(x)
+
+
 def init_weights(net, init_type='normal', init_gain=0.02):
     """
     Initialize network weights.
@@ -534,82 +734,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-class ResnetGeneratorColorizatoin(nn.Module):
-    def __init__(self,
-                 input_nc,
-                 output_nc,
-                 ngf,
-                 norm_layer=nn.InstanceNorm2d,
-                 use_dropout=False,
-                 n_blocks=6,
-                 padding_type='reflect'):
-        """
-        CycleGAN_based with Colorization ref: https://arxiv.org/abs/1909.08313
 
-
-
-        :param input_nc:
-        :param output_nc:
-        :param ngf:
-        :param norm_layer:
-        :param use_dropout:
-        :param n_blocks:
-        :param padding_type:
-        """
-        super(ResnetGeneratorColorizatoin, self).__init__()
-        use_bias = False
-
-        # DownSample
-        downsampling_block = [
-            nn.ReflectionPad2d(3),
-            nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=use_bias),
-            nn.InstanceNorm2d(ngf),
-            nn.ReLU(True)
-        ]
-        n_downsampling = 2
-        for i in range(n_downsampling):
-            mult = 2 ** i
-            downsampling_block += [
-                nn.ReflectionPad2d(1),
-                nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=0, bias=use_bias),
-                norm_layer(ngf * mult * 2),
-                nn.ReLU(True)
-            ]
-        mult = 2 ** n_downsampling
-        for i in range(n_blocks):
-            downsampling_block += [
-                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
-                            use_bias=use_bias)
-            ]
-
-        # TODO: ADD AdaIn to stylize source_RGB
-
-        # UpSampling
-        for i in range(n_downsampling):
-            mult = 2 ** (n_downsampling - i)
-            model += [
-                nn.Upsample(scale_factor=2, mode='nearest'),
-                nn.ReflectionPad2d(1),
-                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
-                norm_layer(int(ngf * mult / 2)),
-                nn.ReLU(True)
-            ]
-
-        model += [
-            nn.ReflectionPad2d(3),
-            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=use_bias),
-            nn.Tanh()
-        ]
-        self.DownSample = nn.Sequential(*model)
-
-    def forward(self, img_rgb, img_gray):
-        """
-        img_gray -> target_gray style colorization to img_rgb
-        :param img_rgb:
-        :param img_gray:
-        :return:
-        """
-        return self.model(img_gray)
 
 
 def define_G(input_nc,
@@ -666,58 +791,6 @@ def define_G(input_nc,
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
-class NLayerDiscriminator(nn.Module):
-    def __init__(self,
-                 input_nc,
-                 ndf=64,
-                 n_layers=3,
-                 norm_layer=None):
-        """
-        PatchGAN discriminator
-        :param input_nc:
-        :param ndf:
-        :param n_layers:
-        :param norm_layer:
-        """
-        super(NLayerDiscriminator, self).__init__()
-
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-
-        if type(norm_layer) == functools.partial:
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
-
-        kernel_size = 4
-        padding = 1
-        sequence = [
-            nn.Conv2d(input_nc, ndf, kernel_size=kernel_size, stride=2, padding=padding),
-            nn.LeakyReLU(0.2, True)
-        ]
-        nf = 1
-        for i in range(1, n_layers):
-            nf_prev = nf
-            nf = min(nf * 2, 8)
-            sequence += [
-                nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=2, padding=padding, bias=use_bias),
-                norm_layer(ndf * nf),
-                nn.LeakyReLU(0.2, True)
-            ]
-        nf_prev = nf
-        nf = min(nf * 2, 8)
-        sequence += [
-            nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=1, padding=padding, bias=use_bias),
-            norm_layer(ndf * nf),
-            nn.LeakyReLU(0.2, True),
-            nn.Conv2d(ndf * nf, 1, kernel_size=kernel_size, stride=1, padding=padding)
-        ]
-        self.model = nn.Sequential(*sequence)
-
-    def forward(self, x):
-        return self.model(x)
-
-
 def define_D(input_nc,
              ndf,
              netD,
@@ -772,7 +845,7 @@ def define_D(input_nc,
 
 
 ##############################################################################
-# Classes
+# Helper Classes
 ##############################################################################
 
 
