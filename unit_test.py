@@ -14,7 +14,6 @@ from torchvision import transforms
 from PIL import Image
 
 x = torch.randn(1, 3 * 1 * 1)
-m = nn.Linear(3, 10)
-x = m(x)
-print(x.size())
-# print(mea.size())
+y = x.clone()
+print(x)
+print(y)

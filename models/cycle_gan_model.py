@@ -38,6 +38,8 @@ class CycleGANModel(BaseModel):
             parser.add_argument('--netG', type=str, default='resnet_9blocks',
                                 help='specify generator architecture in CycleGAN [ resnet_9blocks | resnet_6blocks ]')
             parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
+            parser.add_argument('--norm', type=str, default='instance_norm',
+                                help='specify normalization type')
 
         return parser
 

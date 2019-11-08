@@ -16,7 +16,7 @@ class UGATITModel(BaseModel):
             parser.add_argument('--n_res', type=int, default=4, help='number of resblock')
             parser.add_argument('--n_dis', type=int, default=6, help='number of discriminator layer')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
-            parser.add_argument('--img_ch', type=int, default=3, help='channels of image')
+            # parser.add_argument('--img_ch', type=int, default=3, help='channels of image')
             parser.add_argument('--netG', type=str, default='resnet_ugatit_6blocks',
                                 help='specify generator architecture in ugatit [ resnet_ugatit_6blocks ]')
             parser.add_argument('--netD', type=str, default='UGATIT',

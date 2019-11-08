@@ -51,8 +51,8 @@ class ColorizationDataset(BaseDataset):
         return {
             'A_RGB': A_RGB,
             'B_RGB': B_RGB,
-            'A_gray': A_gray,
-            'B_gray': B_gray,
+            'A_Gray': A_gray,
+            'B_Gray': B_gray,
             'A_paths': A_path,
             'B_paths': B_path
         }
