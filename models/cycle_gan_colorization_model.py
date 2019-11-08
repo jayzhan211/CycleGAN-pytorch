@@ -17,15 +17,15 @@ class CycleGANColorizationModel(BaseModel):
             parser.add_argument('--n_dis', type=int, default=6, help='number of discriminator layer')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
             # parser.add_argument('--img_ch', type=int, default=3, help='channels of image')
-            parser.add_argument('--netG', type=str, default='resnet_ugatit_6blocks',
+            parser.add_argument('--netG', type=str, default='resnet_6blocks_colorization',
                                 help='specify generator architecture in ugatit [ resnet_ugatit_6blocks ]')
-            parser.add_argument('--netD', type=str, default='UGATIT',
+            parser.add_argument('--netD', type=str, default='cyclegancolorization',
                                 help='specify discriminator architecture in ugatit [UGATIT]')
 
         return parser
 
     def __init__(self, opt):
-        super(CycleGANColorizationModel, self).__init__()
+        super(CycleGANColorizationModel, self).__init__(opt)
         self.loss_names = [
             'G_A', 'G_B',
             'D_A', 'D_B',

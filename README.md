@@ -41,6 +41,6 @@ dataset: horse2zebra/sketch2Line(our private dataset)
 
 ### CycleGAN_Coloorization
 
-`python train.py --data_root ./dataset/sketch2Line --name s2L_CycleGAN_Colorization --moddel cycle_gan_colorization --input_nc 1 --dataset_mode colorization`
+`python train.py --data_root ./dataset/sketch2Line --name s2L_CycleGAN_Colorization --model cycle_gan_colorization --input_nc 1 --dataset_mode colorization`
 
 

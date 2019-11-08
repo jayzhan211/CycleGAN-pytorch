@@ -446,7 +446,7 @@ class ResnetGeneratorUGATIT(nn.Module):
 class ResnetGeneratorColorization(nn.Module):
     def __init__(self,
                  input_nc,
-                 output_nc,
+                 # output_nc,
                  ngf,
                  norm_layer=nn.InstanceNorm2d,
                  use_dropout=False,
@@ -467,7 +467,7 @@ class ResnetGeneratorColorization(nn.Module):
         """
         super(ResnetGeneratorColorization, self).__init__()
 
-        assert input_nc == 1 and output_nc == 3, 'input_nc should be 1, and output_nc should be 3'
+        assert input_nc == 1, 'input_nc should be 1'
 
         use_bias = False
 
@@ -509,10 +509,10 @@ class ResnetGeneratorColorization(nn.Module):
         self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
 
         # UpSampling
-        UpBlock = []
+        UpBlock_RBG = []
         for i in range(n_downsampling):
             mult = 2 ** (n_downsampling - i)
-            UpBlock += [
+            UpBlock_RBG += [
                 nn.Upsample(scale_factor=2, mode='nearest'),
                 nn.ReflectionPad2d(1),
                 nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
@@ -520,15 +520,33 @@ class ResnetGeneratorColorization(nn.Module):
                 nn.ReLU(True)
             ]
 
-        UpBlock += [
+        UpBlock_RBG += [
             nn.ReflectionPad2d(3),
-            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.Conv2d(ngf, 3, kernel_size=7, stride=1, padding=0, bias=use_bias),
             nn.Tanh()
         ]
 
+        UpBlock_Gray = []
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            UpBlock_Gray += [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
+                norm_layer(int(ngf * mult / 2)),
+                nn.ReLU(True)
+            ]
+        UpBlock_Gray += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, 1, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.Tanh()
+        ]
+
+
         self.DownSample = nn.Sequential(*DownBlock)
         self.FC = nn.Sequential(*fc)
-        self.UpSample = nn.Sequential(*UpBlock)
+        self.UpSample_RBG = nn.Sequential(*UpBlock_RBG)
+        self.UpSample_Gray = nn.Sequential(*UpBlock_Gray)
 
     def forward(self, img_rgb, img_gray):
         """
@@ -545,9 +563,9 @@ class ResnetGeneratorColorization(nn.Module):
 
         img_rgb = img_gray.clone()
         for i in range(self.n_blocks):
-            img_rgb = getattr(self, 'UpBlock1_{}'.format(i + 1))(img_gry, gamma, beta)
-        img_rgb = self.UpBlock(img_rgb)
-        img_gray = self.UpBlock(img_gray)
+            img_rgb = getattr(self, 'AdaInBlock_{}'.format(i + 1))(img_gry, gamma, beta)
+        img_rgb = self.UpSample_RBG(img_rgb)
+        img_gray = self.UpSample_Gray(img_gray)
 
         return img_rgb, img_gray
 
@@ -602,6 +620,7 @@ class DiscriminatorCycleGANColorization(nn.Module):
 
     def forward(self, _input):
         return self.model(_input)
+
 
 class DiscriminatorUGATIT(nn.Module):
     def __init__(self,
@@ -839,7 +858,9 @@ def define_G(input_nc,
     elif netG == 'resnet_ugatit_6blocks':
         net = ResnetGeneratorUGATIT(input_nc, output_nc, ngf=ngf, light=light)
     elif netG == 'resnet_6blocks_colorization':
-        net = ResnetGeneratorColorization(input_nc, output_nc, ngf=ngf)
+        net = ResnetGeneratorColorization(input_nc, ngf=ngf, n_blocks=6)
+    elif netG == 'resnet_9blocks_colorization':
+        net = ResnetGeneratorColorization(input_nc, ngf=ngf, n_blocks=9)
     else:
         raise NotImplementedError('Generator model name: {} is not recognized,'
                                   'use [resnet_9blocks, resnet_6blocks, resnet_ugatit_6blocks]'.format(netG))
@@ -894,7 +915,7 @@ def define_D(input_nc,
         else:
             raise NotImplementedError('Discriminator in UGATIT supports n_layers 5 and 7 only,'
                                       ' you get {} instead'.format(n_layers))
-    elif netD in ['Cyclegan_collorization']:
+    elif netD in ['Cyclegan_colorization', 'cyclegancolorization']:
         net = DiscriminatorCycleGANColorization(input_nc, ndf, n_layers=3)
     else:
         raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(netD))

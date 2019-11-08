@@ -1,12 +1,8 @@
 from data.base_dataset import BaseDataset, get_transform
 from data.image_folder import make_dataset
-from skimage import color
 from PIL import Image
-import numpy as np
-import torchvision.transforms as transforms
 import os.path
 import random
-
 
 class ColorizationDataset(BaseDataset):
     """
@@ -19,8 +15,9 @@ class ColorizationDataset(BaseDataset):
 
     def __init__(self, opt):
         super(ColorizationDataset, self).__init__(opt)
-        self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
-        self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
+        self.dir_A = os.path.join(opt.data_root, opt.phase + 'A')
+        self.dir_B = os.path.join(opt.data_root, opt.phase + 'B')
+
         self.A_paths = sorted(make_dataset(self.dir_A, opt.max_dataset_size))
         self.B_paths = sorted(make_dataset(self.dir_B, opt.max_dataset_size))
         self.A_size = len(self.A_paths)
