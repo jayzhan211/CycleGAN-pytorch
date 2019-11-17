@@ -82,10 +82,10 @@ def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, conv
         else:
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
 
-    if use_gray2rgb:
-        transform_list += [
-            transforms.Lambda(lambda img: gray2rgb(img))
-        ]
+    # if use_gray2rgb:
+    #     transform_list += [
+    #         transforms.Lambda(lambda img: gray2rgb(img))
+    #     ]
 
     return transforms.Compose(transform_list)
 

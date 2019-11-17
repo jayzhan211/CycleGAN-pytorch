@@ -2,8 +2,12 @@ from .base_options import BaseOptions
 
 
 class TrainOptions(BaseOptions):
+    """
+    This class includes training options
+    """
     def __init__(self):
         super(TrainOptions, self).__init__()
+
         parser = self.parser
         parser.add_argument('--display_freq', type=int, default=400,
                             help='frequency of showing training results on screen')

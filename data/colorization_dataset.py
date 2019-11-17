@@ -23,10 +23,10 @@ class ColorizationDataset(BaseDataset):
         self.A_size = len(self.A_paths)
         self.B_size = len(self.B_paths)
 
-        self.transform_A_RGB = get_transform(self.opt, convert=False)
-        self.transform_B_RGB = get_transform(self.opt, convert=False)
-        self.transform_A_gray = get_transform(self.opt, convert=False, gray_scale=True)
-        self.transform_B_gray = get_transform(self.opt, convert=False, gray_scale=True)
+        self.transform_A_RGB = get_transform(self.opt)
+        self.transform_B_RGB = get_transform(self.opt)
+        self.transform_A_gray = get_transform(self.opt, gray_scale=True)
+        self.transform_B_gray = get_transform(self.opt, gray_scale=True)
 
     def __getitem__(self, index):
         A_path = self.A_paths[index % self.A_size]

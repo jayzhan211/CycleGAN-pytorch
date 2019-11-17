@@ -5,6 +5,12 @@ import torch
 
 
 def tensor2numpy(img, img_type=np.uint8):
+    """
+    converts tensor to np.ndarray
+    :param img:
+    :param img_type:
+    :return:
+    """
 
     if isinstance(img, torch.Tensor):
         img_tensor = img.data
@@ -43,20 +49,19 @@ def save_image(img, img_pth, aspect_ratio=1.0):
 
 def mkdir(pth):
     """
-
+    Create directories
     :param pth: list or str
     :return:
     """
     if isinstance(pth, list):
         for p in pth:
             if not os.path.exists(p):
-                os.mkdir(p)
+                os.makedirs(p)
     elif isinstance(pth, str):
         if not os.path.exists(pth):
-            print('pth {}'.format(pth))
-            os.mkdir(pth)
+            os.makedirs(pth)
     else:
-        raise NotImplementedError('path must be list|str')
+        raise NotImplementedError('paths must be (list) or (str)')
 
 
 def str2bool(x):

@@ -446,7 +446,6 @@ class ResnetGeneratorUGATIT(nn.Module):
 class ResnetGeneratorColorization(nn.Module):
     def __init__(self,
                  input_nc,
-                 # output_nc,
                  ngf,
                  norm_layer=nn.InstanceNorm2d,
                  use_dropout=False,
@@ -499,7 +498,7 @@ class ResnetGeneratorColorization(nn.Module):
             setattr(self, 'AdaInBlock_{}'.format(i + 1), ResnetAdaInBlock(ngf * mult, use_bias=False))
 
         fc = [
-            nn.Linear(img_size // mult * img_size // mult * ngf * mult, ngf * mult, bias=False),
+            nn.Linear(img_size * img_size * 3, ngf * mult, bias=False),
             nn.ReLU(True),
             nn.Linear(ngf * mult, ngf * mult, bias=False),
             nn.ReLU(True),
@@ -542,7 +541,7 @@ class ResnetGeneratorColorization(nn.Module):
             nn.Tanh()
         ]
 
-
+        self.n_blocks = n_blocks
         self.DownSample = nn.Sequential(*DownBlock)
         self.FC = nn.Sequential(*fc)
         self.UpSample_RBG = nn.Sequential(*UpBlock_RBG)
@@ -555,7 +554,7 @@ class ResnetGeneratorColorization(nn.Module):
         :param img_gray:
         :return:
         """
-        img_gry = self.DownSample(img_gray)
+        img_gray = self.DownSample(img_gray)
         _img = self.FC(img_rgb.view(img_rgb.shape[0], -1))
 
         gamma = self.gamma(_img)
@@ -563,7 +562,7 @@ class ResnetGeneratorColorization(nn.Module):
 
         img_rgb = img_gray.clone()
         for i in range(self.n_blocks):
-            img_rgb = getattr(self, 'AdaInBlock_{}'.format(i + 1))(img_gry, gamma, beta)
+            img_rgb = getattr(self, 'AdaInBlock_{}'.format(i + 1))(img_gray, gamma, beta)
         img_rgb = self.UpSample_RBG(img_rgb)
         img_gray = self.UpSample_Gray(img_gray)
 
@@ -612,7 +611,7 @@ class DiscriminatorCycleGANColorization(nn.Module):
         model += [
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, bias=False)
+                nn.Conv2d(ndf * mult * 2, 3, kernel_size=4, stride=1, bias=False)
             ),
         ]
 
@@ -807,9 +806,6 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
         net = torch.nn.DataParallel(net, gpu_ids)
     init_weights(net, init_type, init_gain=init_gain)
     return net
-
-
-
 
 
 def define_G(input_nc,

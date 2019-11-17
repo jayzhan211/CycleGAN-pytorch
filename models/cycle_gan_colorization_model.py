@@ -32,12 +32,31 @@ class CycleGANColorizationModel(BaseModel):
             'rec_G_A', 'rec_G_B',
             'idt_G_A', 'idt_G_B'
         ]
-        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2B2A', 'fake_A2A']
-        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2A2B', 'fake_B2B']
+        visual_names_A = [
+            'real_A_RGB',
+            'real_A_Gray',
+            'fake_A2B_RGB',
+            'fake_A2B_Gray',
+            'fake_A2B2A_RGB',
+            'fake_A2B2A_Gray',
+            'fake_A2A_RGB',
+            'fake_A2A_Gray',
+        ]
+        visual_names_B = [
+            'real_B_RGB',
+            'real_B_Gray',
+            'fake_B2A_RGB',
+            'fake_B2A_Gray',
+            'fake_B2A2B_RGB',
+            'fake_B2A2B_Gray',
+            'fake_B2B_RGB',
+            'fake_B2B_Gray',
+        ]
         self.visual_names = visual_names_A + visual_names_B
         self.model_names = ['genA2B', 'genB2A']
         if self.isTrain:
-            self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
+            # self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
+            self.model_names.extend(['disA', 'disB'])
 
         # define networks
         self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
@@ -46,8 +65,8 @@ class CycleGANColorizationModel(BaseModel):
         # self.disGB = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         # self.disLA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=5, gpu_ids=self.gpu_ids)
         # self.disLB = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=5, gpu_ids=self.gpu_ids)
-        self.disA = define_D(opt.input_nc, opt.output_nc, opt.ngf, opt.netD, gpu_ids=self.gpu_ids)
-        self.disB = define_D(opt.input_nc, opt.output_nc, opt.ngf, opt.netD, gpu_ids=self.gpu_ids)
+        self.disA = define_D(3, opt.ndf, opt.netD, gpu_ids=self.gpu_ids)
+        self.disB = define_D(3, opt.ndf, opt.netD, gpu_ids=self.gpu_ids)
 
         # define loss
         self.L1_loss = nn.L1Loss().to(self.device)
@@ -86,10 +105,31 @@ class CycleGANColorizationModel(BaseModel):
         self.real_B_RGB = None
         self.real_A_Gray = None
         self.real_B_Gray = None
-        self.fake_A2B = None
-        self.fake_B2A = None
-        self.D_loss_A = None
-        self.D_loss_B = None
+
+        self.fake_A2B_RGB = None
+        self.fake_B2A_RGB = None
+        self.fake_A2B_Gray = None
+        self.fake_B2A_Gray = None
+
+        self.fake_B2B_RGB = None
+        self.fake_B2B_Gray = None
+        self.fake_A2A_Gray = None
+        self.fake_A2A_RGB = None
+
+        self.fake_A2B2A_Gray = None
+        self.fake_A2B2A_RGB = None
+        self.fake_B2A2B_Gray = None
+        self.fake_B2A2B_RGB = None
+
+        self.loss_rec_G_A = None
+        self.loss_rec_G_B = None
+        self.loss_idt_G_A = None
+        self.loss_idt_G_B = None
+
+        self.loss_D_A = None
+        self.loss_D_B = None
+        self.loss_G_A = None
+        self.loss_G_B = None
 
     def set_input(self, _input):
         A2B = self.opt.direction in ['A2B', 'AtoB']
@@ -153,10 +193,10 @@ class CycleGANColorizationModel(BaseModel):
         # self.D_loss_A = self.adv_weight * (D_ad_loss_GA + D_ad_loss_LA)
         # self.D_loss_B = self.adv_weight * (D_ad_loss_GB + D_ad_loss_LB)
 
-        self.D_loss_A = self.adv_weight * (D_ad_loss_A)
-        self.D_loss_B = self.adv_weight * (D_ad_loss_B)
+        self.loss_D_A = self.adv_weight * D_ad_loss_A
+        self.loss_D_B = self.adv_weight * D_ad_loss_B
 
-        D_loss = self.D_loss_A + self.D_loss_B
+        D_loss = self.loss_D_A + self.loss_D_B
         D_loss.backward()
         self.optimizer_D.step()
 
