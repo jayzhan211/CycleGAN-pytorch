@@ -4,6 +4,7 @@ from PIL import Image
 import os.path
 import random
 
+
 class ColorizationDataset(BaseDataset):
     """
     Load RGB images, return (L, RGB)
@@ -35,15 +36,13 @@ class ColorizationDataset(BaseDataset):
         else:
             index_B = random.randint(0, self.B_size - 1)
         B_path = self.B_paths[index_B]
-        A_RGB = Image.open(A_path).convert('RGB')
-        B_RGB = Image.open(B_path).convert('RGB')
-        A_gray = Image.open(A_path).convert('L')
-        B_gray = Image.open(B_path).convert('L')
+        A_img = Image.open(A_path).convert('RGB')
+        B_img = Image.open(B_path).convert('RGB')
 
-        A_RGB = self.transform_A_RGB(A_RGB)
-        B_RGB = self.transform_B_RGB(B_RGB)
-        A_gray = self.transform_A_gray(A_gray)
-        B_gray = self.transform_B_gray(B_gray)
+        A_RGB = self.transform_A_RGB(A_img)
+        B_RGB = self.transform_B_RGB(B_img)
+        A_gray = self.transform_A_gray(A_img)
+        B_gray = self.transform_B_gray(B_img)
 
         return {
             'A_RGB': A_RGB,

@@ -7,7 +7,7 @@ import os
 
 class UnalignedDataset(BaseDataset):
     def __init__(self, opt):
-        super(UnalignedDataset, self).__init__()
+        super(UnalignedDataset, self).__init__(opt)
         # BaseDataset.__init__(self, opt)
         self.dir_A = os.path.join(opt.data_root, opt.phase + 'A')
         self.dir_B = os.path.join(opt.data_root, opt.phase + 'B')

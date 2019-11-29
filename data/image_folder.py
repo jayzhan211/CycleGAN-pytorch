@@ -1,4 +1,3 @@
-import torch.utils.data as data
 import os.path
 from torchvision.datasets.folder import is_image_file
 

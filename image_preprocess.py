@@ -1,45 +1,40 @@
+import os
 import torch
-from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-from data.image_folder import make_dataset
-import torchvision.transforms as transforms
-from utils.util import mkdir
+from torchvision import datasets, transforms
 
 """
-resize image to (256,256) and save to disk
+resize images in dataset random_split to train and test dataset 
+
+add new folder datsetA or datasetB and push only one dataset at once 
 """
 
-class CustomerDataset(Dataset):
-    def __init__(self, data_root):
-        self.data_root = data_root
-        self.imgs_path = make_dataset(self.data_root)
+if __name__ == '__main__':
+    dataset_name = 'helsinkimonamour'
+    sz = 256
+    ratio = 0.9
+    dataset = datasets.ImageFolder(root='./datasetB', transform=transforms.Compose([
+        transforms.Resize(256),
+        transforms.ToTensor()
+    ]))
 
-    def __getitem__(self, index):
-        img_pth = self.imgs_path[index]
-        img = Image.open(img_pth).convert('RGB')
-        return {
-            'img': img,
-            'img_path': img_pth,
-        }
+    train_sz = int(ratio * len(dataset))
+    test_sz = len(dataset) - train_sz
+    train_ds, test_ds = torch.utils.data.random_split(dataset, [train_sz, test_sz])
 
-    def __len__(self):
-        return len(self.imgs_path)
+    save_path_directory_train = 'dataset/{}_{}/train'.format(dataset_name, sz)
+    save_path_directory_test = 'dataset/{}_{}/test'.format(dataset_name, sz)
+    if not os.path.exists(save_path_directory_train):
+        os.makedirs(save_path_directory_train)
+    if not os.path.exists(save_path_directory_test):
+        os.makedirs(save_path_directory_test)
 
+    train_loaders = DataLoader(train_ds)
+    test_loaders = DataLoader(test_ds)
 
-dataset = CustomerDataset(data_root='./sketch')
-mkdir('./sketch_256')
-for i, data in enumerate(dataset):
-    img = data['img']
-    img_pth = data['img_path']
-    if img_pth[-3:] not in ['jpg', 'png']:
-        continue
-    # print(img.size)
-    # print(img_pth)
-    img = img.resize((256, 256), Image.BILINEAR)
-    # img = img.resize((256, 256), Image.BICUBIC)
-    # img = img.resize((256, 256), Image.NEAREST)
-    # print(img.size)
-    img.save('./sketch_256/{:04d}.{}'.format(i, img_pth[-3:]))
-    # data.show()
-    # break
-
+    for i, (data, label) in enumerate(train_loaders):
+        img = transforms.ToPILImage()(data[0]).convert("RGB")
+        img.save('{}/{:04d}.jpg'.format(save_path_directory_train, i))
+    for i, (data, label) in enumerate(test_loaders):
+        img = transforms.ToPILImage()(data[0]).convert("RGB")
+        img.save('{}/{:04d}.jpg'.format(save_path_directory_test, i))

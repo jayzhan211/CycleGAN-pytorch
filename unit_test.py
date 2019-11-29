@@ -7,14 +7,16 @@ from options.train_options import TrainOptions
 from options.train_options import TrainOptions
 from data import create_dataset
 from models import create_model
-from utils.visualizer import Visualizer
+# from utils.visualizer import Visualizer
 import time
 import numpy as np
 from torchvision import transforms
 from PIL import Image
 
 if __name__ == '__main__':
-    print('\t Eng : {}'.format('sdfsdfsdfdsf'))
+    a = []
+    a += [transforms.ToTensor()]
+    print(a)
 
     # opt = TrainOptions().parse()
     # print(opt)

@@ -51,7 +51,7 @@ class BaseDataset(data.Dataset, ABC):
         pass
 
 
-def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, convert=True, use_gray2rgb=False):
+def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, totensor=True):
     transform_list = []
     if gray_scale:
         transform_list.append(transforms.Grayscale(1))
@@ -69,23 +69,18 @@ def get_transform(opt, params=None, gray_scale=False, method=Image.BICUBIC, conv
     if 'crop' in opt.preprocess:
         if params is None:
             transform_list.append(transforms.RandomCrop(opt.crop_size))
-        else:
+        elif 'center_crop' in params:
             transform_list.append(transforms.CenterCrop(opt.crop_size))
 
     if opt.preprocess == 'none':
         transform_list.append(transforms.Lambda(lambda img: __make_power_2(img, base=4, method=method)))
 
-    if convert:
+    if totensor:
         transform_list += [transforms.ToTensor()]
         if gray_scale:
             transform_list += [transforms.Normalize((0.5,), (0.5,))]
         else:
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-
-    # if use_gray2rgb:
-    #     transform_list += [
-    #         transforms.Lambda(lambda img: gray2rgb(img))
-    #     ]
 
     return transforms.Compose(transform_list)
 

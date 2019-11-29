@@ -4,7 +4,7 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra/sketch2Line(our private dataset)
 
 # TODO
-- [ ] Add Colorization GAN
+- [ ] Try Trivial CycleGAN
 
 # Command Line
 
@@ -21,29 +21,18 @@ dataset: horse2zebra/sketch2Line(our private dataset)
 * image preprocess
 `python image_preprocess.py  --data_root ./dataset/rakugakiicon`
 
-### dataset: ./sketch2Line
+### sketch2Line + cyclegan
 
 `python train.py --data_root ./dataset/sketch2Line --name s2L_cyclegan --model cycle_gan`
 
 `python train.py --data_root ./dataset/sketch2Line --name s2L_cyclegan --model cycle_gan --continue`
 
-### UGATit
+### sketch2Line + UGATIT
 
 `python train.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model ugatit`
 
 `python train.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model ugatit --light True`
 
-### unit_test.py
+### drawing2paint + cyclegan
 
-`python unit_test.py --data_root ./dataset/sketch2Line --name s2L_UGATIT --model cycle_gan`
-
-`python unit_test.py --data_root ./dataset/sketch2Line --name s2L_cyclegan  --model cycle_gan --gray2rgb`
-
-### CycleGAN_Coloorization
-
-`python train.py --data_root ./dataset/sketch2Line --name s2L_CycleGAN_Colorization --model cycle_gan_colorization --input_nc 1 --dataset_mode colorization`
-
-
-
-`python unit_test.py --data_root ./dataset/sketch2Line --name s2L_CycleGAN_Colorization --model cycle_gan_colorization --input_nc 1 --dataset_mode colorization`
-
+`python train.py --data_root ./dataset/draw2paint --name d2p_cyclegan --model cycle_gan`

@@ -81,7 +81,12 @@ class ResnetBlock(nn.Module):
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
+        conv_block += [
+            nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
+            norm_layer(dim),
+            nn.ReLU(True)
+        ]
+
         if use_dropout:
             conv_block += [nn.Dropout(0.5)]
 
@@ -94,7 +99,10 @@ class ResnetBlock(nn.Module):
             p = 1
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim)]
+        conv_block += [
+            nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
+            norm_layer(dim)
+        ]
 
         return nn.Sequential(*conv_block)
 
@@ -284,13 +292,13 @@ class ResnetAdaInBlock(nn.Module):
     def __init__(self, dim, use_bias):
         super(ResnetAdaInBlock, self).__init__()
         self.pad1 = nn.ReflectionPad2d(1)
-        self.conv1 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
+        self.conv1 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=0, bias=use_bias)
         self.norm1 = AdaIn()
         self.relu1 = nn.ReLU(True)
 
         self.pad2 = nn.ReflectionPad2d(1)
-        self.conv2 = nn.Conv2d(dim, dim, kernel_size=3, bias=use_bias)
-        self.norm2 = AdaIn(dim)
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=0, bias=use_bias)
+        self.norm2 = AdaIn()
 
     def forward(self, x, gamma, beta):
         out = self.pad1(x)
@@ -446,27 +454,27 @@ class ResnetGeneratorUGATIT(nn.Module):
 class ResnetGeneratorColorization(nn.Module):
     def __init__(self,
                  input_nc,
-                 ngf,
+                 output_nc,
+                 ngf=64,
                  norm_layer=nn.InstanceNorm2d,
                  use_dropout=False,
-                 img_size=256,
+                 # img_size=256,
                  n_blocks=6,
                  padding_type='reflect'):
         """
-        CycleGAN_based with Colorization ref: https://arxiv.org/abs/1909.08313
 
-        :type img_size:
-        :param input_nc: 1
-        :param output_nc: 3
+        input: gray_scale
+        output: paint to rgb, style-like the original rgb image
+
+        :param input_nc:
+        :param output_nc:
         :param ngf:
-        :param norm_layer:
-        :param use_dropout:
         :param n_blocks:
-        :param padding_type:
         """
         super(ResnetGeneratorColorization, self).__init__()
 
         assert input_nc == 1, 'input_nc should be 1'
+        assert output_nc == 3, 'input_nc should be 3'
 
         use_bias = False
 
@@ -474,7 +482,7 @@ class ResnetGeneratorColorization(nn.Module):
         DownBlock = [
             nn.ReflectionPad2d(3),
             nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=use_bias),
-            nn.InstanceNorm2d(ngf),
+            norm_layer(ngf),
             nn.ReLU(True)
         ]
         n_downsampling = 2
@@ -486,6 +494,7 @@ class ResnetGeneratorColorization(nn.Module):
                 norm_layer(ngf * mult * 2),
                 nn.ReLU(True)
             ]
+        # current number of filters: 4 * ngf
         mult = 2 ** n_downsampling
         for i in range(n_blocks):
             DownBlock += [
@@ -497,21 +506,15 @@ class ResnetGeneratorColorization(nn.Module):
         for i in range(n_blocks):
             setattr(self, 'AdaInBlock_{}'.format(i + 1), ResnetAdaInBlock(ngf * mult, use_bias=False))
 
-        fc = [
-            nn.Linear(img_size * img_size * 3, ngf * mult, bias=False),
-            nn.ReLU(True),
-            nn.Linear(ngf * mult, ngf * mult, bias=False),
-            nn.ReLU(True),
-        ]
-
         self.gamma = nn.Linear(ngf * mult, ngf * mult, bias=False)
         self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
 
+        
         # UpSampling
-        UpBlock_RBG = []
+        UpBlock = []
         for i in range(n_downsampling):
             mult = 2 ** (n_downsampling - i)
-            UpBlock_RBG += [
+            UpBlock += [
                 nn.Upsample(scale_factor=2, mode='nearest'),
                 nn.ReflectionPad2d(1),
                 nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
@@ -519,41 +522,27 @@ class ResnetGeneratorColorization(nn.Module):
                 nn.ReLU(True)
             ]
 
-        UpBlock_RBG += [
+        UpBlock += [
             nn.ReflectionPad2d(3),
-            nn.Conv2d(ngf, 3, kernel_size=7, stride=1, padding=0, bias=use_bias),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=use_bias),
             nn.Tanh()
         ]
 
-        UpBlock_Gray = []
-        for i in range(n_downsampling):
-            mult = 2 ** (n_downsampling - i)
-            UpBlock_Gray += [
-                nn.Upsample(scale_factor=2, mode='nearest'),
-                nn.ReflectionPad2d(1),
-                nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=use_bias),
-                norm_layer(int(ngf * mult / 2)),
-                nn.ReLU(True)
-            ]
-        UpBlock_Gray += [
-            nn.ReflectionPad2d(3),
-            nn.Conv2d(ngf, 1, kernel_size=7, stride=1, padding=0, bias=use_bias),
-            nn.Tanh()
-        ]
-
-        self.n_blocks = n_blocks
-        self.DownSample = nn.Sequential(*DownBlock)
-        self.FC = nn.Sequential(*fc)
-        self.UpSample_RBG = nn.Sequential(*UpBlock_RBG)
-        self.UpSample_Gray = nn.Sequential(*UpBlock_Gray)
+        self.DownBlock = nn.Sequential(*DownBlock)
+        self.UpBlock = nn.Sequential(*UpBlock)
 
     def forward(self, img_rgb, img_gray):
         """
-        img_gray -> target_gray style colorization to img_rgb
-        :param img_rgb:
-        :param img_gray:
+        gray_scale img
+        :param img:
         :return:
         """
+        img_rgb_feat = self.DownBlock(img_rgb)
+        img_gray_feat = self.DownBlock(img_gray)
+
+        gamma, beta = self.gamma(x_), self.beta(x_)
+
+
         img_gray = self.DownSample(img_gray)
         _img = self.FC(img_rgb.view(img_rgb.shape[0], -1))
 
@@ -820,7 +809,7 @@ def define_G(input_nc,
              light=False):
     """
     :param netG: Generator_name
-    :param light: UGATIT light mode
+    :param light: light mode (UGATIT)
     :param input_nc: number of channels in input_images
     :param output_nc: number of channels output_images
     :param ngf: number of filters in last conv_layer
@@ -874,7 +863,7 @@ def define_D(input_nc,
              gpu_ids=None):
     """
     Discriminator,  it uses leaky relu
-    :param input_nc:
+    :param input_nc: the number of channels in input images
     :param ndf: number of filter in the first conv layer
     :param netD: basic | n_layers | ugatit
     :param n_layers_d:
@@ -911,8 +900,8 @@ def define_D(input_nc,
         else:
             raise NotImplementedError('Discriminator in UGATIT supports n_layers 5 and 7 only,'
                                       ' you get {} instead'.format(n_layers))
-    elif netD in ['Cyclegan_colorization', 'cyclegancolorization']:
-        net = DiscriminatorCycleGANColorization(input_nc, ndf, n_layers=3)
+    elif netD in ['Cyclegan_colorization', 'cyclegan_colorization']:
+        net = DiscriminatorCycleGANColorization(input_nc, ndf, n_layers=n_layers)
     else:
         raise NotImplementedError('Discriminator model name [{}] is not recognized'.format(netD))
 
