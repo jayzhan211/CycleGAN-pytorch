@@ -4,7 +4,7 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra/sketch2Line(our private dataset)
 
 # TODO
-- [ ] Try Trivial CycleGAN
+- [ ] Step2 Colorization, use pretrained vgg with encode/decoder with instance normalization
 
 # Command Line
 

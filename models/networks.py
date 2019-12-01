@@ -506,8 +506,6 @@ class ResnetGeneratorColorization(nn.Module):
         for i in range(n_blocks):
             setattr(self, 'AdaInBlock_{}'.format(i + 1), ResnetAdaInBlock(ngf * mult, use_bias=False))
 
-        self.gamma = nn.Linear(ngf * mult, ngf * mult, bias=False)
-        self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
 
         
         # UpSampling
@@ -531,31 +529,22 @@ class ResnetGeneratorColorization(nn.Module):
         self.DownBlock = nn.Sequential(*DownBlock)
         self.UpBlock = nn.Sequential(*UpBlock)
 
-    def forward(self, img_rgb, img_gray):
+    def forward(self, img):
         """
         gray_scale img
         :param img:
         :return:
         """
-        img_rgb_feat = self.DownBlock(img_rgb)
-        img_gray_feat = self.DownBlock(img_gray)
 
-        gamma, beta = self.gamma(x_), self.beta(x_)
+        img = self.DownBlock(img)
 
+        # img_rgb = img_gray.clone()
+        # for i in range(self.n_blocks):
+        #     img_rgb = getattr(self, 'AdaInBlock_{}'.format(i + 1))(img_gray, gamma, beta)
+        # img_rgb = self.UpSample_RBG(img_rgb)
+        # img_gray = self.UpSample_Gray(img_gray)
 
-        img_gray = self.DownSample(img_gray)
-        _img = self.FC(img_rgb.view(img_rgb.shape[0], -1))
-
-        gamma = self.gamma(_img)
-        beta = self.beta(_img)
-
-        img_rgb = img_gray.clone()
-        for i in range(self.n_blocks):
-            img_rgb = getattr(self, 'AdaInBlock_{}'.format(i + 1))(img_gray, gamma, beta)
-        img_rgb = self.UpSample_RBG(img_rgb)
-        img_gray = self.UpSample_Gray(img_gray)
-
-        return img_rgb, img_gray
+        return img
 
 
 class DiscriminatorCycleGANColorization(nn.Module):

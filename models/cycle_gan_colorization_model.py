@@ -18,19 +18,26 @@ class CycleGANColorizationModel(BaseModel):
             # parser.add_argument('--n_res', type=int, default=4, help='number of resblock')
             # parser.add_argument('--n_dis', type=int, default=6, help='number of discriminator layer')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
-            parser.add_argument('--netG', type=str, default='resnet_6blocks_colorization',
-                                help='specify generator architecture in ugatit [ resnet_ugatit_6blocks ]')
-            parser.add_argument('--netD', type=str, default='discriminator_colorization',
+            parser.add_argument('--netG', type=str, default='resnet_6blocks',
+                                help='specify generator architecture')
+            parser.add_argument('--netD', type=str, default='basic',
                                 help='specify discriminator architecture in ugatit [UGATIT]')
+
             parser.add_argument('--input_nc', type=int, default=1,
                                 help='# of input image channels: 3 for RGB and 1 for grayscale')
             parser.add_argument('--output_nc', type=int, default=1,
+                                help='# of output image channels: 3 for RGB and 1 for grayscale')
+            parser.add_argument('--input_nc_color', type=int, default=1,
+                                help='# of input image channels: 3 for RGB and 1 for grayscale')
+            parser.add_argument('--output_nc_color', type=int, default=3,
                                 help='# of output image channels: 3 for RGB and 1 for grayscale')
 
         return parser
 
     def __init__(self, opt):
         super(CycleGANColorizationModel, self).__init__(opt)
+        self.opt = opt
+
         self.loss_names = [
             'G_A', 'G_B',
             'D_A', 'D_B',
@@ -66,6 +73,8 @@ class CycleGANColorizationModel(BaseModel):
         # define networks
         self.genA2B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
         self.genB2A = define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
+
+        self.genC = define_G(opt.input_nc_color, opt.output_nc_color, opt.ngf, opt.netG, gpu_ids=self.gpu_ids)
         # self.disGA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         # self.disGB = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         # self.disLA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=5, gpu_ids=self.gpu_ids)
@@ -74,6 +83,7 @@ class CycleGANColorizationModel(BaseModel):
         if self.isTrain:
             self.disA = define_D(opt.output_nc, opt.ndf, opt.netD, gpu_ids=self.gpu_ids)
             self.disB = define_D(opt.input_nc, opt.ndf, opt.netD, gpu_ids=self.gpu_ids)
+            self.disC = define_D(opt.input_nc, opt.ndf, opt.netD, gpu_ids=self.gpu_ids)
 
             self.optimizer_G = torch.optim.Adam(
                 itertools.chain(self.genA2B.parameters(), self.genB2A.parameters()),
@@ -87,8 +97,15 @@ class CycleGANColorizationModel(BaseModel):
                 betas=(opt.beta1, 0.999),
                 weight_decay=opt.weight_decay)
 
+            self.optimizer_GC = torch.optim.Adam(
+                itertools.chain(self.genC.parameters()),
+                lr=opt.lr,
+                betas=(opt.beta1, 0.999),
+                weight_decay=opt.weight_decay)
+
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
+            self.optimizers.append(self.optimizer_GC)
 
             self.L1_loss = nn.L1Loss().to(self.device)
             self.MSE_loss = nn.MSELoss().to(self.device)
@@ -156,6 +173,8 @@ class CycleGANColorizationModel(BaseModel):
             Step #2 Colorization
         """
 
+        # Because cant map to some domain for Colorize fake A2B, so adain by vgg loss instead
+
 
 
     def backward_G(self):
@@ -194,6 +213,13 @@ class CycleGANColorizationModel(BaseModel):
         loss_D = (self.loss_adv_D_A + self.loss_adv_D_B) * 0.5
         loss_D.backward()
 
+    def backward_GC(self):
+        pass
+
+    def toGray(self, im):
+        assert im.size() == (self.opt.batch_size, 3, self.opt.img_size, self.opt.img_size)
+        im = 0.2989 * im[:, 0, ...] + 0.5870 * im[:, 1, ...] + 0.1140 * im[:, 2, ...]
+        return im
 
 
 
