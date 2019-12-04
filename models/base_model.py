@@ -154,12 +154,12 @@ class BaseModel(ABC):
         Parameters:
             epoch (int) -- current epoch; used in the file name '{str}_net_{str}.pth' % (epoch, name)
         """
+
         for name in self.model_names:
             if isinstance(name, str):
                 save_filename = '{}_{}.pth'.format(name, epoch)
                 save_path = os.path.join(self.save_dir, save_filename)
                 net = getattr(self, name)
-
                 if len(self.gpu_ids) > 0 and torch.cuda.is_available():
                     torch.save(net.module.cpu().state_dict(), save_path)
                     net.cuda(self.gpu_ids[0])

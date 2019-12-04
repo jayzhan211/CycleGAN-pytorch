@@ -4,65 +4,140 @@ import numpy as np
 import torch
 
 
-def tensor2numpy(img, img_type=np.uint8):
+def tensor2im(input_image, imtype=np.uint8):
     """
-    converts tensor to np.ndarray
-    :param img:
-    :param img_type:
+    Converts a Tensor array into a numpy image array.
+    :param input_image: (tensor) the input image tensor array
+    :param imtype: (type) the desired type of the converted numpy array
     :return:
     """
 
-    if isinstance(img, torch.Tensor):
-        img_tensor = img.data
-        assert img_tensor.max() <= 1.0 and img_tensor.min() >= -1.0, 'torch.tensor is out of range [-1.0, 1.0]'
-        img_np = img_tensor[0].cpu().float().numpy()
-        if img_np.shape[0] == 1:
-            img_np = np.tile(img_np, (3, 1, 1))
-        # [-1.0, 1.0] -> [0.0, 255.0]
-        img_np = (np.transpose(img_np, (1, 2, 0)) + 1.0) / 2.0 * 255.0
-        img = img_np
-
-    elif not isinstance(img, np.ndarray):
-        raise TypeError('img must be torch.Tensor or np.ndarray')
-
-    return img.astype(img_type)
+    if not isinstance(input_image, np.ndarray):
+        if isinstance(input_image, torch.Tensor):  # get the data from a variable
+            image_tensor = input_image.data
+        else:
+            return input_image
+        image_numpy = image_tensor[0].cpu().float().numpy()  # convert it into a numpy array
+        if image_numpy.shape[0] == 1:  # grayscale to RGB
+            image_numpy = np.tile(image_numpy, (3, 1, 1))
+        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+    else:  # if it is a numpy array, do nothing
+        image_numpy = input_image
+    return image_numpy.astype(imtype)
 
 
-def save_image(img, img_pth, aspect_ratio=1.0):
+def save_image(image_numpy, image_path, aspect_ratio=1.0):
+    """Save a numpy image to the disk
+    Parameters:
+        image_numpy (numpy array) -- input numpy array
+        image_path (str)          -- the path of the image
+        :param aspect_ratio:
     """
 
-    :param img: (numpy array)
-    :param img_pth:
-    :param aspect_ratio:
-    :return:
-    """
-    assert isinstance(img, np.ndarray), 'img should be np.ndarray, but' \
-                                        'found {} instead'.format(type(img))
-    img_pil = Image.fromarray(img)
-    h, w, _ = img.shape
+    image_pil = Image.fromarray(image_numpy)
+    h, w, _ = image_numpy.shape
+
     if aspect_ratio > 1.0:
-        img_pil = img_pil.resize(h, w * aspect_ratio, Image.BICUBIC)
+        image_pil = image_pil.resize((h, int(w * aspect_ratio)), Image.BICUBIC)
     if aspect_ratio < 1.0:
-        img_pil = img_pil.resize(h / aspect_ratio, w, Image.BICUBIC)
-    img_pil.save(img_pth)
+        image_pil = image_pil.resize((int(h / aspect_ratio), w), Image.BICUBIC)
+    image_pil.save(image_path)
 
 
-def mkdir(pth):
+def mkdirs(paths):
+    """create empty directories if they don't exist
+    Parameters:
+        paths (str list) -- a list of directory paths
     """
-    Create directories
-    :param pth: list or str
-    :return:
-    """
-    if isinstance(pth, list):
-        for p in pth:
-            if not os.path.exists(p):
-                os.makedirs(p)
-    elif isinstance(pth, str):
-        if not os.path.exists(pth):
-            os.makedirs(pth)
+    if isinstance(paths, list) and not isinstance(paths, str):
+        for path in paths:
+            mkdir(path)
     else:
-        raise NotImplementedError('paths must be (list) or (str)')
+        mkdir(paths)
+
+
+def mkdir(path):
+    """create a single empty directory if it didn't exist
+    Parameters:
+        path (str) -- a single directory path
+    """
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 
 def str2bool(x):
     return x.lower() == 'true'
+
+
+def toGray(im):
+    b, c, h, w = im.size()
+    assert c == 3
+    im = 0.2989 * im[:, 0, :, :] + 0.5870 * im[:, 1, :, :] + 0.1140 * im[:, 2, :, :]
+    return im.unsqueeze(1)
+
+def to3channel(x):
+    b, c, h, w = x.size()
+    assert c == 1
+    x = x.repeat(1, 3, 1, 1)
+    return x
+
+def calc_mean_std(feat, eps=1e-5):
+    size = feat.size()
+    assert (len(size) == 4)
+    mean, var = torch.mean(feat, dim=[2, 3], keepdim=True), torch.var(feat, dim=[2, 3], keepdim=True)
+    std = torch.sqrt(var + eps)
+    return mean, std
+
+def calc_feat_flatten_mean_std(feat):
+    assert (len(feat.size()) == 3)
+    assert (feat.size()[0] == 3)
+    assert feat.dtype == torch.float
+    feat_flatten = feat.view(3, -1)
+    mean = feat_flatten.mean(dim=-1, keepdim=True)
+    std = feat_flatten.std(dim=-1, keepdim=True)
+    return feat_flatten, mean, std
+
+def _mat_sqrt(x):
+    U, D, V = torch.svd(x)
+    return torch.mm(torch.mm(U, D.pow(0.5).diag()), V.t())
+
+def coral(source, target):
+    """
+    color-preserved in adain
+    :param self:
+    :return:
+    """
+
+    device = source.device
+
+    if len(source.size()) == 3:
+        source = source.unsqueeze(0)
+    if len(target.size()) == 3:
+        target = target.unsqueeze(0)
+
+    assert len(source.size()) == len(target.size()) == 4
+    assert source.size()[1] == target.size()[1] == 3
+
+    result = target.clone()
+    b = source.size()[0]
+    for i in range(b):
+
+
+        source_f, source_f_mean, source_f_std = calc_feat_flatten_mean_std(source[i])
+        source_f_norm = (source_f - source_f_mean) / source_f_std
+        source_f_cov_eye = torch.mm(source_f_norm, source_f_norm.t()) + torch.eye(3).to(device)
+
+        target_f, target_f_mean, target_f_std = calc_feat_flatten_mean_std(target[i])
+        target_f_norm = (target_f - target_f_mean) / target_f_std
+        target_f_cov_eye = torch.mm(target_f_norm, target_f_norm.t()) + torch.eye(3).to(device)
+
+        source_f_norm_transfer = torch.mm(
+            _mat_sqrt(target_f_cov_eye),
+            torch.mm(torch.inverse(_mat_sqrt(source_f_cov_eye)),
+                     source_f_norm)
+        )
+
+        source_f_transfer = source_f_norm_transfer * target_f_std + target_f_mean
+        result[i] = source_f_transfer.view(source[i].size())
+
+    return result

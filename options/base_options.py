@@ -3,20 +3,23 @@ import models
 import data
 import os
 import torch
-from utils.util import mkdir
+from utils.util import mkdir, mkdirs
 
 
-class BaseOptions:
+class BaseOptions():
+    """This class defines options used during both training and test time.
+    It also implements several helper functions such as parsing, printing, and saving the options.
+    It also gathers additional options defined in <modify_commandline_options> functions in both dataset class and model class.
     """
-    This class defines basic options for train and test
-    """
+
     def __init__(self):
+        """Reset the class; indicates the class hasn't been initailized"""
+        self.initialized = False
 
-        # init parser
-        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-        # basic
-        parser.add_argument('--data_root', required=True,
+    def initialize(self, parser):
+        """Define the common options that are used in both training and test."""
+        # basic parameters
+        parser.add_argument('--dataroot', required=True,
                             help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
         parser.add_argument('--name', type=str, default='experiment_name',
                             help='name of the experiment. It decides where to store samples and models')
@@ -35,7 +38,7 @@ class BaseOptions:
         # base_model
         parser.add_argument('--ngf', type=int, default=64, help='numbers of generator filters in the conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='numbers of discriminator filters in the conv layer')
-
+        parser.add_argument('--norm', type=str, default='instance_norm', help='instance normalization or batch normalization [instance | batch | none]')
         parser.add_argument('--init_type', type=str, default='normal',
                             help='network initialization [normal | xavier | kaiming | orthogonal]')
         parser.add_argument('--init_gain', type=float, default=0.02,
@@ -56,8 +59,6 @@ class BaseOptions:
                             help='maximum number of samples allowed per dataset')
         parser.add_argument('--preprocess', type=str, default='resize_and_crop',
                             help='[resize_and_crop | crop | scale_width | scale_width_and_crop | none]')
-        parser.add_argument('--gray2rgb', action='store_true',
-                            help='expand grayscale dimension to 3')
         parser.add_argument('--no_flip', action='store_true',
                             help='if specified, do not flip the images for data augmentation')
         parser.add_argument('--display_window_size', type=int, default=256,
@@ -73,29 +74,44 @@ class BaseOptions:
         parser.add_argument('--suffix', default='', type=str,
                             help='customized suffix: opt.name = opt.name + suffix: e.g. {model}_{netG}_size{load_size}')
 
-        self.parser = parser
-        self.isTrain = False
+        self.initialized = True
+        return parser
 
     def gather_options(self):
+        """
+        Initialize our parser with basic options(only once).
+        Add additional model-specific and dataset-specific options.
+        These options are defined in the <modify_commandline_options> function
+        in model and dataset classes.
+        """
+        if not self.initialized:  # check if it has been initialized
+            parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+            parser = self.initialize(parser)
 
-        parser = self.parser
-        # get the basic option
+            # get the basic options
         opt, _ = parser.parse_known_args()
 
-        # modify additional option
+        # modify model-related parser options
         model_name = opt.model
         model_option_setter = models.get_option_setter(model_name)
         parser = model_option_setter(parser, self.isTrain)
-        opt, _ = parser.parse_known_args()
+        opt, _ = parser.parse_known_args()  # parse again with new defaults
 
+        # modify dataset-related parser options
         dataset_name = opt.dataset_mode
         dataset_option_setter = data.get_option_setter(dataset_name)
         parser = dataset_option_setter(parser, self.isTrain)
 
+        # save and return the parser
         self.parser = parser
         return parser.parse_args()
 
     def print_options(self, opt):
+        """
+        Print and save options
+        It will print both current options and default values(if different).
+        It will save options into a text file / [checkpoints_dir] / opt.txt
+        """
         message = '----------------- Options ---------------\n'
         for k, v in sorted(vars(opt).items()):
             comment = ''
@@ -107,13 +123,13 @@ class BaseOptions:
         print(message)
 
         # save to the disk
-        # mkdir(opt.checkpoints_dir)
         expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
-        mkdir(expr_dir)
+        mkdirs(expr_dir)
         file_name = os.path.join(expr_dir, '{}_opt.txt'.format(opt.phase))
-        with open(file_name, 'a') as opt_file:
+        with open(file_name, 'wt') as opt_file:
             opt_file.write(message)
             opt_file.write('\n')
+
 
     def parse(self):
         """
@@ -121,6 +137,8 @@ class BaseOptions:
         """
         opt = self.gather_options()
         opt.isTrain = self.isTrain
+
+        # process opt.suffix
         if opt.suffix:
             suffix = ('_' + opt.suffix.format(**vars(opt))) if opt.suffix != '' else ''
             opt.name = opt.name + suffix
@@ -138,5 +156,6 @@ class BaseOptions:
         if len(opt.gpu_ids) > 0:
             torch.cuda.set_device(opt.gpu_ids[0])
 
-        return opt
+        self.opt = opt
+        return self.opt
 

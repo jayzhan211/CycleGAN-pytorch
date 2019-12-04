@@ -3,12 +3,12 @@ from .base_options import BaseOptions
 
 class TrainOptions(BaseOptions):
     """
-    This class includes training options
+    This class includes training options.
+    It also includes shared options defined in BaseOptions.
     """
-    def __init__(self):
-        super(TrainOptions, self).__init__()
-
-        parser = self.parser
+    def initialize(self, parser):
+        parser = BaseOptions.initialize(self, parser)
+        # visdom and HTML visualization parameters
         parser.add_argument('--display_freq', type=int, default=400,
                             help='frequency of showing training results on screen')
         parser.add_argument('--display_nrow', type=int, default=4,
@@ -41,14 +41,16 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--niter_decay', type=int, default=100,
                             help='# of iter to linearly decay learning rate to zero')
         parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
-        parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate for adam')
+        parser.add_argument('--lr', type=float, default=1e-4, help='initial learning rate for adam')
         parser.add_argument('--gan_mode', type=str, default='lsgan',
                             help='the type of GAN objective. [vanilla| lsgan | wgangp].')
         parser.add_argument('--lr_policy', type=str, default='linear',
-                            help='learning rate policy. [linear | step | plateau | cosine | none]')
+                            help='learning rate policy. [linear | step | plateau | cosine | none | linear_style]')
         parser.add_argument('--lr_decay_iters', type=int, default=50,
                             help='multiply by a gamma every lr_decay_iters iterations')
+        parser.add_argument('--lr_decay', type=float, default=5e-5,
+                            help='multiply by a weight for each iterations')
         parser.add_argument('--weight_decay', type=float, default=0.0001,
                             help='the weight decay in adam optimizer')
         self.isTrain = True
-        self.parser = parser
+        return parser

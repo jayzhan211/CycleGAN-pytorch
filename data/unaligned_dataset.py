@@ -6,11 +6,18 @@ import os
 
 
 class UnalignedDataset(BaseDataset):
+    """
+    This dataset class can load unaligned/unpaired datasets.
+    It requires two directories to host training images from domain A '/path/to/data/trainA'
+    and from domain B '/path/to/data/trainB' respectively.
+    You can train the model with the dataset flag '--dataroot /path/to/data'.
+    Similarly, you need to prepare two directories:
+    '/path/to/data/testA' and '/path/to/data/testB' during test time.
+    """
     def __init__(self, opt):
-        super(UnalignedDataset, self).__init__(opt)
-        # BaseDataset.__init__(self, opt)
-        self.dir_A = os.path.join(opt.data_root, opt.phase + 'A')
-        self.dir_B = os.path.join(opt.data_root, opt.phase + 'B')
+        BaseDataset.__init__(self, opt)
+        self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
+        self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
 
         self.A_paths = make_dataset(self.dir_A, opt.max_dataset_size)
         self.B_paths = make_dataset(self.dir_B, opt.max_dataset_size)
@@ -19,8 +26,8 @@ class UnalignedDataset(BaseDataset):
         b2a = self.opt.direction in ['BtoA', 'B2A']
         input_nc = self.opt.output_nc if b2a else self.opt.input_nc
         output_nc = self.opt.input_nc if b2a else self.opt.output_nc
-        self.transform_A = get_transform(self.opt, gray_scale=(input_nc == 1))
-        self.transform_B = get_transform(self.opt, gray_scale=(output_nc == 1))
+        self.transform_A = get_transform(self.opt, grayscale=(input_nc == 1))
+        self.transform_B = get_transform(self.opt, grayscale=(output_nc == 1))
 
     def __getitem__(self, index):
         """
@@ -42,7 +49,6 @@ class UnalignedDataset(BaseDataset):
 
         A = self.transform_A(A_img)
         B = self.transform_B(B_img)
-
         return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
 
     def __len__(self):

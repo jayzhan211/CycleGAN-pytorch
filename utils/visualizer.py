@@ -12,14 +12,15 @@ else:
     VisdomExceptionBase = ConnectionError
 
 
-def save_images(web_page, visuals, image_path, aspect_ratio=0.1, image_size=256):
+def save_images(web_page, visuals, image_path, aspect_ratio=1.0, image_size=256):
     """
-
-    :param web_page: the HTML class,
-    :param visuals: Ordered Dict that stores (name, images)
-    :param image_path:
-    :param aspect_ratio:
-    :param image_size:
+    save images to the disk
+    This function will save images stored in 'visuals' to the HTML file specified by 'webpage'.
+    :param web_page: (HTML) the HTML webpage class that stores these imaegs (see html.py for more details)
+    :param visuals: (OrderedDict) an ordered dictionary that stores (name, images (either tensor or numpy) ) pairs
+    :param image_path: (str) the string is used to create image paths
+    :param aspect_ratio: (float) the aspect ratio of saved images
+    :param image_size: (int) the images will be resized to width x width
     :return:
     """
     image_dir = web_page.get_image_dir()
@@ -29,11 +30,11 @@ def save_images(web_page, visuals, image_path, aspect_ratio=0.1, image_size=256)
     web_page.add_header(name)
     image_paths, images_name, links = [], [], []
 
-    for label, img_data in visuals.items():
-        img = util.tensor2numpy(img_data)
+    for label, im_data in visuals.items():
+        im = util.tensor2im(im_data)
         image_name = '{}_{}.png' .format(name, label)
         save_path = os.path.join(image_dir, image_name)
-        util.save_image(img, save_path, aspect_ratio=aspect_ratio)
+        util.save_image(im, save_path, aspect_ratio=aspect_ratio)
         image_paths.append(image_name)
         images_name.append(label)
         links.append(image_name)
@@ -43,8 +44,8 @@ def save_images(web_page, visuals, image_path, aspect_ratio=0.1, image_size=256)
 class Visualizer:
     def __init__(self, opt):
         """
-
-        :param opt:
+        Initialize the Visualizer class
+        :param opt: stores all the experiment flags; needs to be a subclass of BaseOptions
         Step 1: Cache the training/test options
         Step 2: connect to a visdom server
         Step 3: create an HTML object for saveing HTML filters
@@ -72,7 +73,7 @@ class Visualizer:
             self.web_dir = os.path.join(opt.checkpoints_dir, opt.name, 'web')
             self.img_dir = os.path.join(self.web_dir, 'images')
             print('create web directory {}...' .format(self.web_dir))
-            util.mkdir([self.web_dir, self.img_dir])
+            util.mkdirs([self.web_dir, self.img_dir])
 
         # create a logging file to store training losses
         self.log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
@@ -164,7 +165,7 @@ class Visualizer:
                 idx = 0
                 img_np = None
                 for label, image in visuals.items():
-                    img_np = util.tensor2numpy(image)
+                    img_np = util.tensor2im(image)
                     label_html_row += '<td>{}</td>' .format(label)
                     images.append(img_np.transpose([2, 0, 1]))
                     idx += 1
@@ -192,7 +193,7 @@ class Visualizer:
                 idx = 1
                 try:
                     for label, image in visuals.items():
-                        image_numpy = util.tensor2numpy(image)
+                        image_numpy = util.tensor2im(image)
                         self.vis.image(image_numpy.transpose([2, 0, 1]), opts=dict(title=label),
                                        win=self.display_id + idx)
                         idx += 1
@@ -202,11 +203,11 @@ class Visualizer:
         if self.use_html and (save_result or not self.saved):
             self.saved = True
             for label, image in visuals.items():
-                image_numpy = util.tensor2numpy(image)
+                image_numpy = util.tensor2im(image)
                 img_path = os.path.join(self.img_dir, 'epoch{:03d}_{}.png' .format(epoch, label))
                 util.save_image(image_numpy, img_path)
 
-            web_page = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name), refresh=1)
+            web_page = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name))
             for n in range(epoch, 0, -1):
                 web_page.add_header('epoch [{}]'.format(n))
                 ims, txts, links = [], [], []
@@ -218,17 +219,3 @@ class Visualizer:
                     links.append(img_path)
                 web_page.add_images(ims, txts, links, image_size=self.win_size)
             web_page.save()
-
-
-
-
-
-
-
-
-
-
-
-
-
-

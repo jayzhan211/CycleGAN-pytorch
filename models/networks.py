@@ -9,6 +9,7 @@ from torch.nn import functional as F
 ###############################################################################
 # Helper Functions
 ###############################################################################
+from utils.util import toGray, to3channel, calc_mean_std
 
 
 class Identity(nn.Module):
@@ -19,20 +20,24 @@ class Identity(nn.Module):
 def get_scheduler(optimizer, opt):
     """
     Return a learning rate scheduler
-    :param optimizer:
-    :param opt: opt.lr_policy is the name of learning rate policy: linear | step | plateau | cosine
+    :param optimizer: the optimizer of the network
+    :param opt: stores all the experiment flags; needs to be a subclass of BaseOptions．　
+                              opt.lr_policy is the name of learning rate policy: linear | step | plateau | cosine
     :return:
-    """
-    """
-    For linear, we keep the same learning rate for the first <iopt.niter> epochs
-    and linearly decay the rate to zero over the next <opt.niter_decay> epochs
+    For 'linear', we keep the same learning rate for the first <opt.niter> epochs
+    and linearly decay the rate to zero over the next <opt.niter_decay> epochs.
+    For other schedulers (step, plateau, and cosine), we use the default PyTorch schedulers.
+    See https://pytorch.org/docs/stable/optim.html for more details.
     """
     if opt.lr_policy == 'linear':
         def lambda_rule(epoch):
             lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.niter) / float(opt.niter_decay + 1)
             return lr_l
-
-        # lambda_rule = lambda epoch: 1.0 - max(0, epoch + opt.epoch_count - opt.niter) / float(opt.niter_decay + 1)
+        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
+    elif opt.lr_policy == 'linear_style':
+        def lambda_rule(epoch):
+            lr_l = 1.0 / float(opt.lr_decay * epoch + 1.0)
+            return lr_l
         scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     elif opt.lr_policy == 'step':
         scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
@@ -135,7 +140,7 @@ class ResnetGenerator(nn.Module):
     def __init__(self, input_nc,
                  output_nc,
                  ngf=64,
-                 norm_layer=None,
+                 norm_layer=nn.InstanceNorm2d,
                  use_dropout=False,
                  n_blocks=6,
                  padding_type='reflect'):
@@ -781,8 +786,10 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     if len(gpu_ids) > 0:
         assert torch.cuda.is_available()
         net.to(gpu_ids[0])
-        net = torch.nn.DataParallel(net, gpu_ids)
+    net = torch.nn.DataParallel(net, gpu_ids)
+
     init_weights(net, init_type, init_gain=init_gain)
+
     return net
 
 
@@ -896,6 +903,34 @@ def define_D(input_nc,
 
     return init_net(net, init_type, init_gain, gpu_ids)
 
+def define_Net(net_type,
+               init_type='normal',
+               init_gain=0.02,
+               gpu_ids=None,
+               pretrained_model_path=None):
+    """
+
+    :param input_nc:
+    :param ndf:
+    :param netD:
+    :param n_layers:
+    :param norm:
+    :param init_type:
+    :param init_gain:
+    :param gpu_ids:
+    :return:
+    """
+    net = None
+
+    if gpu_ids is None:
+        gpu_ids = []
+
+    if net_type == 'adainstyletransfer':
+        net = StyleTransfer(pretrained_model_path)
+    else:
+        raise NotImplementedError('net_type: [{}] is not implemented.'.format(net_type))
+
+    return init_net(net, init_type, init_gain, gpu_ids)
 
 ##############################################################################
 # Helper Classes
@@ -961,3 +996,151 @@ class RhoClipper:
             w = module.rho.data
             w = w.clamp(self.clip_low, self.clip_high)
             module.rho.data = w
+
+
+# def calc_mean_std(feat, eps=1e-5):
+#     # eps is a small value added to the variance to avoid divide-by-zero.
+#     size = feat.size()
+#     assert (len(size) == 4)
+#     N, C = size[:2]
+#     feat_var = feat.view(N, C, -1).var(dim=2) + eps
+#     feat_std = feat_var.sqrt().view(N, C, 1, 1)
+#     feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
+#     return feat_mean, feat_std
+
+def adaptive_instance_normalization(content_feat, style_feat):
+    assert (content_feat.size()[:2] == style_feat.size()[:2])
+    size = content_feat.size()
+    style_mean, style_std = calc_mean_std(style_feat)
+    content_mean, content_std = calc_mean_std(content_feat)
+
+    normalized_feat = (content_feat - content_mean) / content_std
+    return normalized_feat * style_std + style_mean
+
+
+class StyleTransfer(nn.Module):
+    def __init__(self, model_path=None):
+        super(StyleTransfer, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(3, 3, (1, 1)),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(3, 64, (3, 3)),
+            nn.ReLU(),  # relu1-1
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(64, 64, (3, 3)),
+            nn.ReLU(),  # relu1-2
+            nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(64, 128, (3, 3)),
+            nn.ReLU(),  # relu2-1
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(128, 128, (3, 3)),
+            nn.ReLU(),  # relu2-2
+            nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(128, 256, (3, 3)),
+            nn.ReLU(),  # relu3-1
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),  # relu3-2
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),  # relu3-3
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),  # relu3-4
+            nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 512, (3, 3)),
+            nn.ReLU(),  # relu4-1, this is the last layer used
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu4-2
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu4-3
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu4-4
+            nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu5-1
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu5-2
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU(),  # relu5-3
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 512, (3, 3)),
+            nn.ReLU()  # relu5-4
+        )
+
+        if model_path is not None:
+            self.encoder.load_state_dict(torch.load(model_path))
+        self.enc_1 = nn.Sequential(*list(self.encoder.children())[:4])
+        self.enc_2 = nn.Sequential(*list(self.encoder.children())[4:11])
+        self.enc_3 = nn.Sequential(*list(self.encoder.children())[11:18])
+        self.enc_4 = nn.Sequential(*list(self.encoder.children())[18:31])
+
+        self.decoder = nn.Sequential(
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(512, 256, (3, 3)),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode='nearest'),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 256, (3, 3)),
+            nn.ReLU(),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(256, 128, (3, 3)),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode='nearest'),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(128, 128, (3, 3)),
+            nn.ReLU(),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(128, 64, (3, 3)),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode='nearest'),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(64, 64, (3, 3)),
+            nn.ReLU(),
+            nn.ReflectionPad2d((1, 1, 1, 1)),
+            nn.Conv2d(64, 3, (3, 3)),
+        )
+
+        self.mse_loss = nn.MSELoss()
+        self.l1_loss = nn.L1Loss()
+
+        if model_path is not None:
+            for name in ['enc_1', 'enc_2', 'enc_3', 'enc_4']:
+                for param in getattr(self, name).parameters():
+                    param.requires_grad = False
+
+    # extract relu1_1, relu2_1, relu3_1, relu4_1 from input image
+    def encode(self, input):
+        results = [input]
+        for i in range(4):
+            func = getattr(self, 'enc_{:d}'.format(i + 1))
+            results.append(func(results[-1]))
+        return results[1:]
+
+    def forward(self, content, style, alpha=1.0):
+        assert 0 <= alpha <= 1
+        style_feats = self.encode(style)
+        content_feats = self.encode(content)
+
+        t = adaptive_instance_normalization(content_feats[-1], style_feats[-1])
+        t = alpha * t + (1 - alpha) * content_feats[-1]
+
+        g_t = self.decoder(t)
+        g_t_feats = self.encode(g_t)
+
+        return style_feats, content_feats, g_t_feats, g_t, t

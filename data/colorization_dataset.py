@@ -16,8 +16,8 @@ class ColorizationDataset(BaseDataset):
 
     def __init__(self, opt):
         super(ColorizationDataset, self).__init__(opt)
-        self.dir_A = os.path.join(opt.data_root, opt.phase + 'A')
-        self.dir_B = os.path.join(opt.data_root, opt.phase + 'B')
+        self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
+        self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
 
         self.A_paths = sorted(make_dataset(self.dir_A, opt.max_dataset_size))
         self.B_paths = sorted(make_dataset(self.dir_B, opt.max_dataset_size))

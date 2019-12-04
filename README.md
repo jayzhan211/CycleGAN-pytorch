@@ -4,7 +4,8 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 dataset: horse2zebra/sketch2Line(our private dataset)
 
 # TODO
-- [ ] Step2 Colorization, use pretrained vgg with encode/decoder with instance normalization
+- [ ] Test style transfer AdaIn
+- [ ] Implement Differnet Kinds of color mapping in AdaIn
 
 # Command Line
 
@@ -35,4 +36,12 @@ dataset: horse2zebra/sketch2Line(our private dataset)
 
 ### drawing2paint + cyclegan
 
-`python train.py --data_root ./dataset/draw2paint --name d2p_cyclegan --model cycle_gan`
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cyclegan --model cycle_gan`
+
+### drawing2paint + cyclegan
+
+`python train.py --dataroot ./dataset/draw2paint --dataset_mode colorization --name d2p_color_cyclegan --model cycle_gan_colorization --continue_train --no_flip`
+
+### drawing2paint + adain_style
+
+`python train.py --dataroot ./dataset/draw2paint --dataset_mode unaligned --name d2p_adain_style --model adain_style --niter 160000 --batch_size 8  --num_threads 16 --lr_policy linear_style --no_flip --preserve_color`
