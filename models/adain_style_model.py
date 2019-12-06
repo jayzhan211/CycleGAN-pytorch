@@ -10,12 +10,15 @@ class AdaInStyleModel(BaseModel):
     def modify_commandline_options(parser, is_train=True):
         parser.set_defaults(dataset_mode='unaligned')
         if is_train:
-            parser.add_argument('--content_weight', type=float, default=1.0, help='weight for content loss')
-            parser.add_argument('--style_weight', type=float, default=10.0, help='weight for style loss')
+            parser.add_argument('--content_weight', type=float, default=5.0, help='weight for content loss')
+            parser.add_argument('--style_weight', type=float, default=1.0, help='weight for style loss')
             parser.add_argument('--preserve_color', action='store_true',
                                 help='if specified, preserve color of the content image')
             parser.add_argument('--alpha', type=float, default=1.0,
                                 help='the weight that controls the degree of stylization. Should be between 0 and 1')
+            parser.add_argument('--no_use_pretrained_vgg', action='store_true',
+                                help='the weight that controls the degree of stylization. Should be between 0 and 1')
+
         return parser
 
     def __init__(self, opt):
@@ -30,8 +33,12 @@ class AdaInStyleModel(BaseModel):
         ]
         self.model_names = ['net']
 
-        self.net = define_Net(net_type='adainstyletransfer', pretrained_model_path='models/vgg_normalised.pth',
-                              gpu_ids=self.gpu_ids)
+        if not opt.no_use_pretrained_vgg:
+            self.net = define_Net(net_type='adainstyletransfer', pretrained_model_path='models/vgg_normalised.pth',
+                                  gpu_ids=self.gpu_ids)
+        else:
+            self.net = define_Net(net_type='adainstyletransfer', pretrained_model_path=None,
+                                  gpu_ids=self.gpu_ids)
 
         self.optimizer = torch.optim.Adam(self.net.module.decoder.parameters(), lr=opt.lr)
         self.optimizers.append(self.optimizer)
@@ -76,17 +83,17 @@ class AdaInStyleModel(BaseModel):
 
     def calc_rec_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+
         return self.l1_loss(input, target)
 
     def calc_content_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+
         return self.mse_loss(input, target)
 
     def calc_style_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+
         input_mean, input_std = calc_mean_std(input)
         target_mean, target_std = calc_mean_std(target)
         return self.mse_loss(input_mean, target_mean) + \

@@ -44,4 +44,4 @@ dataset: horse2zebra/sketch2Line(our private dataset)
 
 ### drawing2paint + adain_style
 
-`python train.py --dataroot ./dataset/draw2paint --dataset_mode unaligned --name d2p_adain_style --model adain_style --niter 160000 --batch_size 8  --num_threads 16 --lr_policy linear_style --no_flip --preserve_color`
+`python train.py --dataroot ./dataset/draw2paint --dataset_mode unaligned --name d2p_adain_style2 --model adain_style --niter 160000 --niter_decay 0 --batch_size 8  --num_threads 16 --lr_policy linear_style --no_flip --preserve_color`
