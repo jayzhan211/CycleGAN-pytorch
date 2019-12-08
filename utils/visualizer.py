@@ -1,9 +1,9 @@
-import ntpath
+import numpy as np
 import os
 import sys
-from . import util, html
+import ntpath
 import time
-import numpy as np
+from . import util, html
 from subprocess import Popen, PIPE
 
 if sys.version_info[0] == 2:
@@ -12,33 +12,32 @@ else:
     VisdomExceptionBase = ConnectionError
 
 
-def save_images(web_page, visuals, image_path, aspect_ratio=1.0, image_size=256):
-    """
-    save images to the disk
+def save_images(webpage, visuals, image_path, aspect_ratio=1.0, image_size=256):
+    """Save images to the disk.
+    Parameters:
+        webpage (the HTML class) -- the HTML webpage class that stores these imaegs (see html.py for more details)
+        visuals (OrderedDict)    -- an ordered dictionary that stores (name, images (either tensor or numpy) ) pairs
+        image_path (str)         -- the string is used to create image paths
+        aspect_ratio (float)     -- the aspect ratio of saved images
+        width (int)              -- the images will be resized to width x width
     This function will save images stored in 'visuals' to the HTML file specified by 'webpage'.
-    :param web_page: (HTML) the HTML webpage class that stores these imaegs (see html.py for more details)
-    :param visuals: (OrderedDict) an ordered dictionary that stores (name, images (either tensor or numpy) ) pairs
-    :param image_path: (str) the string is used to create image paths
-    :param aspect_ratio: (float) the aspect ratio of saved images
-    :param image_size: (int) the images will be resized to width x width
-    :return:
     """
-    image_dir = web_page.get_image_dir()
+    image_dir = webpage.get_image_dir()
     short_path = ntpath.basename(image_path[0])
     name = os.path.splitext(short_path)[0]
 
-    web_page.add_header(name)
-    image_paths, images_name, links = [], [], []
+    webpage.add_header(name)
+    ims, txts, links = [], [], []
 
     for label, im_data in visuals.items():
         im = util.tensor2im(im_data)
-        image_name = '{}_{}.png' .format(name, label)
+        image_name = '%s_%s.png' % (name, label)
         save_path = os.path.join(image_dir, image_name)
         util.save_image(im, save_path, aspect_ratio=aspect_ratio)
-        image_paths.append(image_name)
-        images_name.append(label)
+        ims.append(image_name)
+        txts.append(label)
         links.append(image_name)
-    web_page.add_images(image_paths, images_name, links, image_size=image_size)
+    webpage.add_images(ims, txts, links, image_size=image_size)
 
 
 class Visualizer:
@@ -82,16 +81,18 @@ class Visualizer:
             log_file.write('================ Training Loss ({}) ================\n' .format(now))
 
     def reset(self):
+        # Reset the self.saved status
         self.saved = False
 
     def print_current_losses(self, epoch, iters, losses, t_comp, t_data):
         """
+        print current losses on console; also save the losses to the disk
 
         :param epoch: (int) current epoch
-        :param iters: (int) current iteration at this epoch
-        :param losses: (OrderedDict) format(name, float)
-        :param t_comp: (float) computational time per data point / batch_size
-        :param t_data: (float) data loading time per data point / batch_size
+        :param iters: (int) current training iteration during this epoch (reset to 0 at the end of every epoch)
+        :param losses: (OrderedDict) training losses stored in the format of (name, float) pairs
+        :param t_comp: (float) computational time per data point (normalized by batch_size)
+        :param t_data: (float) data loading time per data point (normalized by batch_size)
         :return:
         """
         message = '(epoch: {}, iters: {}, time: {:.3f}, data:{:.3f})'.format(epoch, iters, t_comp, t_data)
@@ -103,10 +104,11 @@ class Visualizer:
 
     def plot_current_losses(self, epoch, counter_ratio, losses):
         """
+        display the current losses on visdom display: dictionary of error labels and values
 
-        :param epoch: current epoch
-        :param counter_ratio: progress (percentage) in the current epoch, between 0 to 1
-        :param losses: (name, float)
+        :param epoch: (int) current epoch
+        :param counter_ratio: (float) progress (percentage) in the current epoch, between 0 to 1
+        :param losses: (OrderedDict) training losses stored in the format of (name, float) pairs
         :return:
         """
 
@@ -132,19 +134,20 @@ class Visualizer:
 
     def create_visdom_connections(self):
         """
-        It start a new server at port < self.port >
+        If the program could not connect to Visdom server, this function will start a new server at port < self.port >
         """
-        cmd = sys.executable + ' -m visdom.server -p {} &>/dev/null &' .format(self.port)
-        print('Could not connect to Visdom server.\nTrying to start a server....')
+        cmd = sys.executable + ' -m visdom.server -p {:d} &>/dev/null &' .format(self.port)
+        print('\n\nCould not connect to Visdom server. \n Trying to start a server....')
         print('Command: {}'.format(cmd))
         Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
 
     def display_current_results(self, visuals, epoch, save_result):
         """
+        Display current results on visdom; save current results to an HTML file.
 
-        :param visuals: (OrderedDict) images
+        :param visuals: (OrderedDict) dictionary of images to display or save
         :param epoch: (int) the current epoch
-        :param save_result: (boolean) save to HTML
+        :param save_result: (bool) if save the current results to an HTML file
         :return:
         """
         if self.display_id > 0:
@@ -179,7 +182,7 @@ class Visualizer:
                         label_html_row += '<td></td>'
                         idx += 1
                     if label_html_row != '':
-                        label_html += '<tr>%s</tr>' % label_html_row
+                        label_html += '<tr>{}</tr>'.format(label_html_row)
 
                 try:
                     self.vis.images(images, nrow=nrow, win=self.display_id + 1,
@@ -202,12 +205,14 @@ class Visualizer:
 
         if self.use_html and (save_result or not self.saved):
             self.saved = True
+            # save images to the disk
             for label, image in visuals.items():
                 image_numpy = util.tensor2im(image)
                 img_path = os.path.join(self.img_dir, 'epoch{:03d}_{}.png' .format(epoch, label))
                 util.save_image(image_numpy, img_path)
 
-            web_page = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name))
+            # update website
+            web_page = html.HTML(self.web_dir, 'Experiment name = {}' .format(self.name), refresh=0)
             for n in range(epoch, 0, -1):
                 web_page.add_header('epoch [{}]'.format(n))
                 ims, txts, links = [], [], []
@@ -217,5 +222,7 @@ class Visualizer:
                     ims.append(img_path)
                     txts.append(label)
                     links.append(img_path)
-                web_page.add_images(ims, txts, links, image_size=self.win_size)
+                web_page.add_images(ims, txts, links, width=self.win_size)
             web_page.save()
+
+

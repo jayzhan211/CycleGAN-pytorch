@@ -17,7 +17,9 @@ class AdaInStyleModel(BaseModel):
             parser.add_argument('--alpha', type=float, default=1.0,
                                 help='the weight that controls the degree of stylization. Should be between 0 and 1')
             parser.add_argument('--no_use_pretrained_vgg', action='store_true',
-                                help='the weight that controls the degree of stylization. Should be between 0 and 1')
+                                help='train vgg model from scratch')
+            parser.add_argument('--use_pretrained_decoder', action='store_true',
+                                help='use pretrained decoder')
 
         return parser
 
@@ -26,25 +28,20 @@ class AdaInStyleModel(BaseModel):
         self.loss_names = ['content', 'style']
         self.visual_names = [
             'real_A', 'real_B',
-            # 'style_feat_1', 'style_feat_2', 'style_feat_3', 'style_feat_4',
-            # 'content_feat_1', 'content_feat_2', 'content_feat_3', 'content_feat_4',
-            # 'g_t_feat_1', 'g_t_feat_2', 'g_t_feat_3', 'g_t_feat_4',
+            'real_B_preserve_A_color',
             'g_t',
         ]
         self.model_names = ['net']
 
-        if not opt.no_use_pretrained_vgg:
-            self.net = define_Net(net_type='adainstyletransfer', pretrained_model_path='models/vgg_normalised.pth',
-                                  gpu_ids=self.gpu_ids)
-        else:
-            self.net = define_Net(net_type='adainstyletransfer', pretrained_model_path=None,
-                                  gpu_ids=self.gpu_ids)
+        self.net = define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids,
+                        pretrained_encoder=None if opt.no_use_pretrained_vgg else 'models/vgg_normalised.pth',
+                        pretrained_decoder=None if not opt.use_pretrained_decoder else 'models/decoder.pth')
 
         self.optimizer = torch.optim.Adam(self.net.module.decoder.parameters(), lr=opt.lr)
         self.optimizers.append(self.optimizer)
 
-        self.l1_loss = torch.nn.L1Loss()
-        self.mse_loss = torch.nn.MSELoss()
+        self.l1_loss = torch.nn.L1Loss().to(self.device)
+        self.mse_loss = torch.nn.MSELoss().to(self.device)
 
         self.content_weight = opt.content_weight
         self.style_weight = opt.style_weight
@@ -53,14 +50,17 @@ class AdaInStyleModel(BaseModel):
         self.alpha = opt.alpha
 
     def set_input(self, input):
-        AtoB = self.opt.direction == 'AtoB'
+        AtoB = self.opt.direction in ['AtoB', 'A2B']
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
+
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
         if self.preserve_color:
-            self.real_B = coral(self.real_B, self.real_A)
+            self.real_B_preserve_A_color = coral(self.real_B, self.real_A)
+        else:
+            self.real_B_preserve_A_color = self.real_B.copy()
 
     def optimize_parameters(self):
         self.forward()
@@ -69,17 +69,29 @@ class AdaInStyleModel(BaseModel):
         self.optimizer.step()
 
     def backward(self):
+
         style_feats, content_feats, g_t_feats, g_t, t = self.net(self.real_A, self.real_B, self.alpha)
         loss_content = self.calc_content_loss(g_t_feats[-1], t)
+
+
         loss_style = 0
         for i in range(4):
             loss_style += self.calc_style_loss(g_t_feats[i], style_feats[i])
 
-        loss = loss_content * self.content_weight + loss_style * self.style_weight
-        loss.backward()
-
         self.loss_content, self.loss_style = loss_content, loss_style
         self.g_t = g_t
+
+        loss = loss_content * self.content_weight + \
+               loss_style * self.style_weight
+
+        loss.backward()
+
+        with torch.no_grad():
+            style_feats, content_feats, g_t_feats, g_t, t = self.net(self.real_A, self.real_B_preserve_A_color, self.alpha)
+            self.g_t = g_t
+
+
+
 
     def calc_rec_loss(self, input, target):
         assert (input.size() == target.size())

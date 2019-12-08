@@ -1,15 +1,23 @@
 import dominate
-from dominate.tags import meta, h3, table, tr, td, br, p, img, a
+from dominate.tags import meta, h3, table, tr, td, p, a, img, br
 import os
 
 
 class HTML:
+    """
+    This HTML class allows us to save images and write texts into a single HTML file.
+     It consists of functions such as <add_header> (add a text header to the HTML file),
+     <add_images> (add a row of images to the HTML file), and <save> (save the HTML to the disk).
+     It is based on Python library 'dominate',
+     a Python library for creating and manipulating HTML documents using a DOM API.
+    """
     def __init__(self, web_dir, title, refresh=0):
         """
 
-        :param web_dir: a directory that stores the webpage
-        :param title: the webpage name
-        :param refresh: how often the website refresh itself
+        :param web_dir: (str) a directory that stores the webpage. HTML file will be created at <web_dir>/index.html;
+                        images will be saved at <web_dir/images/
+        :param title: (str) the webpage name
+        :param refresh: (int) how often the website refresh itself. if 0, no refreshing
         """
         self.title = title
         self.web_dir = web_dir
@@ -31,26 +39,24 @@ class HTML:
         with self.doc:
             h3(text)
 
-    def add_images(self, img_pths, images_name, hyper_link, image_size=400):
+    def add_images(self, ims, txts, links, width=400):
+        """add images to the HTML file
+        Parameters:
+            ims (str list)   -- a list of image paths
+            txts (str list)  -- a list of image names shown on the website
+            links (str list) --  a list of hyperref links; when you click an image, it will redirect you to a new page
         """
-        add images to html file
-        :param img_pths: (list)
-        :param images_name: (list) 
-        :param hyper_link:  (list)
-        :param image_size: 
-        :return: 
-        """
-        t = table(border=1, style="table-layout: fixed;")  # Insert a table
-        self.doc.add(t)
-        with t:
+        self.t = table(border=1, style="table-layout: fixed;")  # Insert a table
+        self.doc.add(self.t)
+        with self.t:
             with tr():
-                for img_pth, img_name, link in zip(img_pths, images_name, hyper_link):
+                for im, txt, link in zip(ims, txts, links):
                     with td(style="word-wrap: break-word;", halign="center", valign="top"):
                         with p():
                             with a(href=os.path.join('images', link)):
-                                img(style="width:{}px" .format(image_size), src=os.path.join('images', img_pth))
+                                img(style="width:%dpx".format(width), src=os.path.join('images', im))
                             br()
-                            p(img_name)
+                            p(txt)
 
     def save(self):
         """save the current content to the HMTL file"""
@@ -64,11 +70,12 @@ class HTML:
 if __name__ == '__main__':  # we show an example usage here.
     html = HTML('web/', 'test_html')
     html.add_header('hello world')
-    html.add_header('welcome 4001')
-    image_paths, image_names, links = [], [], []
+
+    ims, txts, links = [], [], []
     for n in range(4):
-        image_paths.append('image_{:03d}.jpg'.format(n))
-        image_names.append('text_{:03d}'.format(n))
-        links.append('image_{:03d}.jpg'.format(n))
-    html.add_images(image_paths, image_paths, links)
+        ims.append('image_{:03d}.png'.format(n))
+        txts.append('text_{:03d}'.format(n))
+        links.append('image_{:03d}.png'.format(n))
+    html.add_images(ims, txts, links)
     html.save()
+

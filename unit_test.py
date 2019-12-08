@@ -41,12 +41,12 @@ def defineG():
     return net
 
 if __name__ == '__main__':
-    device = torch.device('cuda:0')
-    print(device)
-    x = torch.randn(3, 3).to(device)
-    z = torch.randn(3, 3).to(device)
-    y = torch.eye(3)
-    print(x.device)
-    print(y.device)
-    z = x + y
+
+    x = torch.randn(1, 3, 4, 4)
+    y = torch.randn(1, 3, 4, 4)
+    m = nn.L1Loss()
+    z = m(x, y)
+    print(x)
+    print(y)
     print(z)
+    print(abs(x - y))

@@ -26,8 +26,8 @@ class ColorizationDataset(BaseDataset):
 
         self.transform_A_RGB = get_transform(self.opt)
         self.transform_B_RGB = get_transform(self.opt)
-        self.transform_A_gray = get_transform(self.opt, gray_scale=True)
-        self.transform_B_gray = get_transform(self.opt, gray_scale=True)
+        self.transform_A_gray = get_transform(self.opt, grayscale=True)
+        self.transform_B_gray = get_transform(self.opt, grayscale=True)
 
     def __getitem__(self, index):
         A_path = self.A_paths[index % self.A_size]

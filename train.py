@@ -8,7 +8,7 @@ if __name__ == '__main__':
     opt = TrainOptions().parse()
     dataset = create_dataset(opt)
     dataset_size = len(dataset)
-    print('The number of training images = %d' % dataset_size)
+    print('The number of training images = {:d}'.format(dataset_size))
 
     model = create_model(opt)
     model.setup(opt)
@@ -16,9 +16,9 @@ if __name__ == '__main__':
     total_iters = 0
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
-        epoch_start_time = time.time()  # timer for entire epoch
-        iter_data_time = time.time()  # timer for data loading per iteration
-        epoch_iter = 0  # the number of training iterations in current epoch, reset to 0 every epoch
+        epoch_start_time = time.time() # timer for entire epoch
+        iter_data_time = time.time()   # timer for data loading per iteration
+        epoch_iter = 0                 # the number of training iterations in current epoch, reset to 0 every epoch
 
         for i, data in enumerate(dataset):
             iter_start_time = time.time()

@@ -37,13 +37,13 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 
         # training parameters
-        parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')
+        parser.add_argument('--niter', type=int, default=400, help='# of iter at starting learning rate')
         parser.add_argument('--niter_decay', type=int, default=100,
                             help='# of iter to linearly decay learning rate to zero')
         parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
-        parser.add_argument('--lr', type=float, default=1e-4, help='initial learning rate for adam')
+        parser.add_argument('--lr', type=float, default=2e-4, help='initial learning rate for adam')
         parser.add_argument('--gan_mode', type=str, default='lsgan',
-                            help='the type of GAN objective. [vanilla| lsgan | wgangp].')
+                            help='the type of GAN objective. [lsgan]')
         parser.add_argument('--lr_policy', type=str, default='linear',
                             help='learning rate policy. [linear | step | plateau | cosine | none | linear_style]')
         parser.add_argument('--lr_decay_iters', type=int, default=50,

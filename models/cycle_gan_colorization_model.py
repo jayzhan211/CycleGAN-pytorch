@@ -2,7 +2,7 @@ import itertools
 
 from models import networks
 from models.networks import define_G, define_D
-from utils.util import to3channel, calc_mean_std
+from utils.util import to3channel, calc_mean_std, toGray
 from .base_model import BaseModel
 import torch.nn as nn
 import torch
@@ -11,7 +11,7 @@ import torch
 class CycleGANColorizationModel(BaseModel):
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
-        parser.set_defaults(no_dropout=True)
+        parser.set_defaults(dataset_mode='colorization')
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
             parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
@@ -26,18 +26,19 @@ class CycleGANColorizationModel(BaseModel):
             parser.add_argument('--netD', type=str, default='basic',
                                 help='specify discriminator architecture')
 
-            parser.add_argument('--input_nc_color', type=int, default=1,
-                                help='# of input image channels: 3 for RGB and 1 for grayscale')
-            parser.add_argument('--output_nc_color', type=int, default=3,
-                                help='# of output image channels: 3 for RGB and 1 for grayscale')
-
-            parser.add_argument('--vgg_model_path', type=str, default='models/vgg_normalised.pth',
-                                help='path of pretrained_vgg_model')
+            parser.add_argument('--preserve_color', action='store_true',
+                                help='if specified, preserve color of the content image')
+            parser.add_argument('--alpha', type=float, default=1.0,
+                                help='the weight that controls the degree of stylization. Should be between 0 and 1')
+            parser.add_argument('--no_use_pretrained_vgg', action='store_true',
+                                help='the weight that controls the degree of stylization. Should be between 0 and 1')
+            parser.add_argument('--pretrained_vgg_path', type=str, default='models/vgg_normalised.pth',
+                                help='vgg_model path')
 
         return parser
 
     def __init__(self, opt):
-        super(CycleGANColorizationModel, self).__init__(opt)
+        BaseModel.__init__(self, opt)
 
         opt.input_nc = 1
         opt.output_nc = 1
@@ -50,6 +51,9 @@ class CycleGANColorizationModel(BaseModel):
             'rec_G_B',
             'idt_G_A',
             'idt_G_B',
+            'content_A', 'content_B',
+            'style_A', 'style_B',
+            'rec_A', 'rec_B',
         ]
         visual_names_A = [
             'real_A_RGB',
@@ -60,6 +64,7 @@ class CycleGANColorizationModel(BaseModel):
             'fake_A2B2A_Gray',
             # 'fake_A2A_RGB',
             'fake_A2A_Gray',
+            # 'g_t_A',
         ]
         visual_names_B = [
             'real_B_RGB',
@@ -70,6 +75,7 @@ class CycleGANColorizationModel(BaseModel):
             'fake_B2A2B_Gray',
             # 'fake_B2B_RGB',
             'fake_B2B_Gray',
+            # 'g_t_B',
         ]
         self.visual_names = visual_names_A + visual_names_B
         self.model_names = ['genA2B', 'genB2A', 'genColorA2B', 'genColorB2A']
@@ -85,8 +91,16 @@ class CycleGANColorizationModel(BaseModel):
                                norm=opt.norm, use_dropout=not opt.no_dropout,
                                init_type=opt.init_type, init_gain=opt.init_gain)
 
-        self.genColorA2B = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids, pretrained_model_path=opt.vgg_model_path)
-        self.genColorB2A = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids, pretrained_model_path=opt.vgg_model_path)
+
+        self.genColorA2B = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids,
+                                               pretrained_encoder=None if opt.no_use_pretrained_vgg else 'models/vgg_normalised.pth',
+                                               pretrained_decoder=None if not opt.use_pretrained_decoder else 'models/decoder.pth')
+
+        self.genColorB2A = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids,
+                                               pretrained_encoder=None if opt.no_use_pretrained_vgg else 'models/vgg_normalised.pth',
+                                               pretrained_decoder=None if not opt.use_pretrained_decoder else 'models/decoder.pth')
+
+
         # self.disGA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         # self.disGB = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=7, gpu_ids=self.gpu_ids)
         # self.disLA = define_D(opt.input_nc, opt.ndf, opt.netD, norm='spectral_norm', n_layers=5, gpu_ids=self.gpu_ids)
@@ -109,7 +123,8 @@ class CycleGANColorizationModel(BaseModel):
                 weight_decay=opt.weight_decay)
 
             self.optimizer_GC = torch.optim.Adam(
-                itertools.chain(self.genColorA2B.module.decoder.parameters(), self.genColorB2A.module.decoder.parameters()),
+                itertools.chain(self.genColorA2B.module.decoder.parameters(),
+                                self.genColorB2A.module.decoder.parameters()),
                 lr=opt.lr,
                 betas=(opt.beta1, 0.999))
 
@@ -127,30 +142,9 @@ class CycleGANColorizationModel(BaseModel):
         self.style_weight = opt.style_weight
         self.rec_weight = opt.rec_weight
 
-        self.real_A_Gray = None
-        self.real_B_Gray = None
-
-        self.fake_A2B_Gray = None
-        self.fake_A2B2A_Gray = None
-        self.fake_B2A_Gray = None
-        self.fake_B2A2B_Gray = None
-        self.fake_A2A_Gray = None
-        self.fake_B2B_Gray = None
-        self.fake_A2B_RGB = None
-        self.fake_B2A_RGB = None
-
-        self.loss_adv_G_A = None
-        self.loss_adv_G_B = None
-        self.loss_rec_G_A = None
-        self.loss_rec_G_B = None
-        self.loss_idt_G_A = None
-        self.loss_idt_G_B = None
-        self.loss_content_G_A = None
-        self.loss_style_G_A = None
-        self.loss_color_rec_G_A = None
-        self.loss_content_G_B = None
-        self.loss_style_G_B = None
-        self.loss_color_rec_G_B = None
+        self.preserve_color = opt.preserve_color
+        self.alpha = opt.alpha
+        self.no_use_pretrained_vgg = opt.no_use_pretrained_vgg
 
     def set_input(self, _input):
         A2B = self.opt.direction in ['A2B', 'AtoB']
@@ -195,10 +189,6 @@ class CycleGANColorizationModel(BaseModel):
 
         self.optimizer_GC.zero_grad()
         self.backward_GC()
-        # loss = (self.loss_content_G_A + self.loss_content_G_B) * self.content_weight + \
-        #        (self.loss_style_G_A + self.loss_style_G_B) * self.style_weight + \
-        #        (self.loss_color_rec_G_A + self.loss_color_rec_G_B) * self.rec_weight
-        # loss.backward()
         self.optimizer_GC.step()
 
     def backward_G(self):
@@ -238,9 +228,11 @@ class CycleGANColorizationModel(BaseModel):
         loss_D.backward()
 
     def backward_GC(self):
-        style_feats_A, content_feats_A, g_t_feats_A, t_A = self.genColorA2B(to3channel(self.fake_A2B_Gray.detach()), self.real_A_RGB)
+        style_feats_A, content_feats_A, g_t_feats_A, g_t_A, t_A = \
+            self.genColorA2B(to3channel(self.fake_A2B_Gray.detach()), self.real_A_RGB, self.alpha)
 
-        style_feats_B, content_feats_B, g_t_feats_B, t_B = self.genColorB2A(to3channel(self.fake_B2A_Gray.detach()), self.real_B_RGB)
+        style_feats_B, content_feats_B, g_t_feats_B, g_t_B, t_B = \
+            self.genColorB2A(to3channel(self.fake_B2A_Gray.detach()), self.real_B_RGB, self.alpha)
 
         loss_content_A = self.calc_content_loss(g_t_feats_A[-1], t_A)
         loss_content_B = self.calc_content_loss(g_t_feats_B[-1], t_B)
@@ -250,21 +242,36 @@ class CycleGANColorizationModel(BaseModel):
             loss_style_A += self.calc_style_loss(g_t_feats_A[i], style_feats_A[i])
             loss_style_B += self.calc_style_loss(g_t_feats_B[i], style_feats_B[i])
 
+        loss_rec_A = self.calc_rec_loss(toGray(g_t_A), self.fake_A2B_Gray.detach())
+        loss_rec_B = self.calc_rec_loss(toGray(g_t_B), self.fake_B2A_Gray.detach())
 
+        self.fake_A2B_RGB = g_t_A
+        self.fake_B2A_RGB = g_t_B
 
         loss = (loss_content_A + loss_content_B) * self.content_weight + \
-               (loss_style_A + loss_style_B) * self.style_weight
+               (loss_style_A + loss_style_B) * self.style_weight + \
+               (loss_rec_A + loss_rec_B) * self.rec_weight
+
+        self.loss_content_A = loss_content_A
+        self.loss_content_B = loss_content_B
+        self.loss_style_A = loss_style_A
+        self.loss_style_B = loss_style_B
+        self.loss_rec_A = loss_rec_A
+        self.loss_rec_B = loss_rec_B
+
         loss.backward()
 
 
     def calc_content_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+        if not self.no_use_pretrained_vgg:
+            assert (target.requires_grad is False)
         return self.MSE_loss(input, target)
 
     def calc_style_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+        if not self.no_use_pretrained_vgg:
+            assert (target.requires_grad is False)
         input_mean, input_std = calc_mean_std(input)
         target_mean, target_std = calc_mean_std(target)
         return self.MSE_loss(input_mean, target_mean) + \
@@ -272,5 +279,6 @@ class CycleGANColorizationModel(BaseModel):
 
     def calc_rec_loss(self, input, target):
         assert (input.size() == target.size())
-        assert (target.requires_grad is False)
+        if not self.no_use_pretrained_vgg:
+            assert (target.requires_grad is False)
         return self.L1_loss(input, target)

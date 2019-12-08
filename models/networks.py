@@ -907,7 +907,8 @@ def define_Net(net_type,
                init_type='normal',
                init_gain=0.02,
                gpu_ids=None,
-               pretrained_model_path=None):
+               pretrained_encoder=None,
+               pretrained_decoder=None):
     """
 
     :param input_nc:
@@ -926,7 +927,7 @@ def define_Net(net_type,
         gpu_ids = []
 
     if net_type == 'adainstyletransfer':
-        net = StyleTransfer(pretrained_model_path)
+        net = AdaInStyleTransfer(pretrained_encoder, pretrained_decoder)
     else:
         raise NotImplementedError('net_type: [{}] is not implemented.'.format(net_type))
 
@@ -1018,9 +1019,9 @@ def adaptive_instance_normalization(content_feat, style_feat):
     return normalized_feat * style_std + style_mean
 
 
-class StyleTransfer(nn.Module):
-    def __init__(self, model_path=None):
-        super(StyleTransfer, self).__init__()
+class AdaInStyleTransfer(nn.Module):
+    def __init__(self, encoder_path=None, decoder_path=None):
+        super(AdaInStyleTransfer, self).__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 3, (1, 1)),
             nn.ReflectionPad2d((1, 1, 1, 1)),
@@ -1077,12 +1078,15 @@ class StyleTransfer(nn.Module):
             nn.ReLU()  # relu5-4
         )
 
-        if model_path is not None:
-            self.encoder.load_state_dict(torch.load(model_path))
-        self.enc_1 = nn.Sequential(*list(self.encoder.children())[:4])
-        self.enc_2 = nn.Sequential(*list(self.encoder.children())[4:11])
-        self.enc_3 = nn.Sequential(*list(self.encoder.children())[11:18])
-        self.enc_4 = nn.Sequential(*list(self.encoder.children())[18:31])
+        if encoder_path is not None:
+            self.encoder.load_state_dict(torch.load(encoder_path))
+            self.enc_1 = nn.Sequential(*list(self.encoder.children())[:4])
+            self.enc_2 = nn.Sequential(*list(self.encoder.children())[4:11])
+            self.enc_3 = nn.Sequential(*list(self.encoder.children())[11:18])
+            self.enc_4 = nn.Sequential(*list(self.encoder.children())[18:31])
+            for name in ['enc_1', 'enc_2', 'enc_3', 'enc_4']:
+                for param in getattr(self, name).parameters():
+                    param.requires_grad = False
 
         self.decoder = nn.Sequential(
             nn.ReflectionPad2d((1, 1, 1, 1)),
@@ -1119,18 +1123,25 @@ class StyleTransfer(nn.Module):
         self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
 
-        if model_path is not None:
-            for name in ['enc_1', 'enc_2', 'enc_3', 'enc_4']:
-                for param in getattr(self, name).parameters():
-                    param.requires_grad = False
+        if decoder_path is not None:
+            self.decoder.load_state_dict(torch.load(decoder_path))
+            # for param in getattr(self, 'decoder').parameters():
+            #     param.requires_grad = False
+
+        self.encoder_path = encoder_path
+        self.decoder_path = decoder_path
 
     # extract relu1_1, relu2_1, relu3_1, relu4_1 from input image
     def encode(self, input):
-        results = [input]
-        for i in range(4):
-            func = getattr(self, 'enc_{:d}'.format(i + 1))
-            results.append(func(results[-1]))
-        return results[1:]
+        if self.encoder_path:
+            results = [input]
+            for i in range(4):
+                func = getattr(self, 'enc_{:d}'.format(i + 1))
+                results.append(func(results[-1]))
+            return results[1:]
+        else:
+            result = self.encoder(input)
+            return result
 
     def forward(self, content, style, alpha=1.0):
         assert 0 <= alpha <= 1
