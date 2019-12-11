@@ -1,6 +1,7 @@
 import functools
 import torch.nn as nn
 import torch
+import torchvision
 from torch.nn import init
 from torch.optim import lr_scheduler
 from torch.nn import functional as F
@@ -15,7 +16,6 @@ from utils.util import toGray, to3channel, calc_mean_std
 class Identity(nn.Module):
     def forward(self, x):
         return x
-
 
 def get_scheduler(optimizer, opt):
     """
@@ -157,10 +157,7 @@ class ResnetGenerator(nn.Module):
         assert n_blocks >= 0, 'n_blocks: {} need to satisfy >=0'.format(n_blocks)
         super(ResnetGenerator, self).__init__()
 
-        """
-        batch_norm has bias term already, use_bias only if we use instance_norm
-        """
-
+        # batch_norm has bias term already, use_bias only if we use instance_norm
         use_bias = norm_layer == nn.InstanceNorm2d
 
         model = [nn.ReflectionPad2d(3),
@@ -688,13 +685,14 @@ class DiscriminatorUGATIT(nn.Module):
 
         return out, cam_logit, heatmap
 
-
 class NLayerDiscriminator(nn.Module):
     def __init__(self,
                  input_nc,
                  ndf=64,
                  n_layers=3,
-                 norm_layer=None):
+                 norm_type='instance_norm',
+                 padding_type='reflect',
+                 relu_type='leaky'):
         """
         PatchGAN discriminator
         :param input_nc:
@@ -704,41 +702,52 @@ class NLayerDiscriminator(nn.Module):
         """
         super(NLayerDiscriminator, self).__init__()
 
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
+        kw = 4
+        padw = 1
+        use_bias = norm_type != 'batch_norm'
 
-        if type(norm_layer) == functools.partial:
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
+        model = []
+        model.extend(
+            self.make_layers(input_nc, ndf, kw, 2, padw, use_bias, padding_type, norm_type, relu_type))
 
-        kernel_size = 4
-        padding = 1
-        sequence = [
-            nn.Conv2d(input_nc, ndf, kernel_size=kernel_size, stride=2, padding=padding),
-            nn.LeakyReLU(0.2, True)
-        ]
         nf = 1
         for i in range(1, n_layers):
             nf_prev = nf
             nf = min(nf * 2, 8)
-            sequence += [
-                nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=2, padding=padding, bias=use_bias),
-                norm_layer(ndf * nf),
-                nn.LeakyReLU(0.2, True)
-            ]
+            model.extend(
+                self.make_layers(ndf * nf_prev, ndf * nf, kw, 2, padw, use_bias, padding_type, norm_type, relu_type))
+
+
         nf_prev = nf
         nf = min(nf * 2, 8)
-        sequence += [
-            nn.Conv2d(ndf * nf_prev, ndf * nf, kernel_size=kernel_size, stride=1, padding=padding, bias=use_bias),
-            norm_layer(ndf * nf),
-            nn.LeakyReLU(0.2, True),
-            nn.Conv2d(ndf * nf, 1, kernel_size=kernel_size, stride=1, padding=padding)
-        ]
-        self.model = nn.Sequential(*sequence)
+        model.extend(
+            self.make_layers(ndf * nf_prev, ndf * nf, kw, 1, padw, use_bias, padding_type, norm_type, relu_type))
+
+        model.extend(
+            self.make_layers(ndf * nf, 1, kw, 1, padw, norm_type != 'spectral_norm', padding_type, norm_type, relu_type))
+
+
+        self.model = nn.Sequential(*model)
 
     def forward(self, x):
         return self.model(x)
+
+    def make_layers(self, in_channels, out_channels, kernel_size, stride, padding,
+                    bias, padding_type, norm_type, relu_type):
+        model = []
+        if padding_type == 'reflect':
+            model += [nn.ReflectionPad2d(padding)]
+        conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+        if norm_type == 'spectral_norm':
+            model += [nn.utils.spectral_norm(conv2d)]
+        elif norm_type == 'batch_norm':
+            model += [conv2d, nn.BatchNorm2d(out_channels)]
+        elif norm_type == 'instance_norm':
+            model += [conv2d, nn.InstanceNorm2d(out_channels)]
+
+        if relu_type == 'leaky':
+            model += [nn.LeakyReLU(0.2, True)]
+        return model
 
 
 def init_weights(net, init_type='normal', init_gain=0.02):
@@ -853,7 +862,9 @@ def define_D(input_nc,
              ndf,
              netD,
              n_layers=3,
-             norm='batch_norm',
+             norm_type='batch_norm',
+             padding_type='basic',
+             relu_type='leaky',
              init_type='normal',
              init_gain=0.02,
              gpu_ids=None):
@@ -874,20 +885,17 @@ def define_D(input_nc,
     if gpu_ids is None:
         gpu_ids = []
 
-    if norm == 'batch_norm':
-        norm_layer = nn.BatchNorm2d
-    elif norm == 'instance_norm':
-        norm_layer = nn.InstanceNorm2d
-    elif norm == 'none' or norm == 'spectral_norm':
-        norm_layer = None
-    else:
-        raise NotImplementedError('norm_layer: {} is not implemented ... , '
-                                  'use batch_norm or instance_norm instead'.format(norm))
+    if norm_type not in ['instance_norm', 'batch_norm', 'spectral_norm']:
+        raise NotImplementedError('norm_layer [{}] is not implemented ... '
+                                  'use "instance_norm", "batch_norm", "spectral_norm" instead'.format(norm_type))
 
-    if netD == 'basic':  # default PatchGAN classifier
-        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
-    elif netD == 'n_layers':  # more options
-        net = NLayerDiscriminator(input_nc, ndf, n_layers=n_layers, norm_layer=norm_layer)
+    if padding_type not in ['reflect', 'basic']:
+        raise NotImplementedError('padding_type [{}] is not implemented ... , '
+                                  'use "reflect", "basic" instead'.format(padding_type))
+
+    if netD == 'n_layers':
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=n_layers, norm_type=norm_type, padding_type=padding_type)
+
     elif netD in ['UGATIT', 'ugatit']:
         if n_layers == 5:
             net = DiscriminatorUGATIT(input_nc, ndf, n_layers=5)
@@ -903,7 +911,68 @@ def define_D(input_nc,
 
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def define_Net(net_type,
+
+class VGG19(nn.Module):
+    def __init__(self, num_classes=1000):
+        super(VGG19, self).__init__()
+
+        layers = []
+        in_channels = 3
+        for v in [64, 64, 'M',
+                  128, 128, 'M',
+                  256, 256, 256, 256, 'M',
+                  512, 512, 512, 512, 'M',
+                  512, 512, 512, 512, 'M']:
+            if v == 'M':
+                layers += [
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                ]
+            else:
+                layers += [
+                    nn.Conv2d(in_channels, v, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(v),
+                    nn.ReLU(inplace=True)
+                ]
+                in_channels = v
+
+        self.features = nn.Sequential(*layers)
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
+        self.classifier = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, num_classes),
+        )
+
+        self.load_state_dict(torch.load('models/vgg19_bn-c79401a0.pth'))
+
+        self.enc_1 = nn.Sequential(*list(self.features.children())[:3]) # input => relu 1-1
+        self.enc_2 = nn.Sequential(*list(self.features.children())[3:10]) # relu 1-1 => relu 2-1
+        self.enc_3 = nn.Sequential(*list(self.features.children())[10:17]) # relu 2-1 => relu 3-1
+        self.enc_4 = nn.Sequential(*list(self.features.children())[17:30]) # relu 3-1 => relu 4-1
+        for name in ['enc_1', 'enc_2', 'enc_3', 'enc_4']:
+            for param in getattr(self, name).parameters():
+                param.requires_grad = False
+
+
+    def forward(self, input):
+
+        # b, _, _, _ = input.size()
+        # m = torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        # for i in range(b):
+        #     input[i] = m(input[i])
+
+        results = [input]
+        for i in range(4):
+            func = getattr(self, 'enc_{:d}'.format(i + 1))
+            results.append(func(results[-1]))
+        return results[1:]
+
+
+def define_Net(netType,
                init_type='normal',
                init_gain=0.02,
                gpu_ids=None,
@@ -926,10 +995,12 @@ def define_Net(net_type,
     if gpu_ids is None:
         gpu_ids = []
 
-    if net_type == 'adainstyletransfer':
+    if netType == 'adainstyletransfer':
         net = AdaInStyleTransfer(pretrained_encoder, pretrained_decoder)
+    elif netType == 'vgg19':
+        net = VGG19()
     else:
-        raise NotImplementedError('net_type: [{}] is not implemented.'.format(net_type))
+        raise NotImplementedError('net_type: [{}] is not implemented.'.format(netType))
 
     return init_net(net, init_type, init_gain, gpu_ids)
 

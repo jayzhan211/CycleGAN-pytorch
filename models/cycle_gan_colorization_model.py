@@ -92,11 +92,11 @@ class CycleGANColorizationModel(BaseModel):
                                init_type=opt.init_type, init_gain=opt.init_gain)
 
 
-        self.genColorA2B = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids,
+        self.genColorA2B = networks.define_Net(netType='adainstyletransfer', gpu_ids=self.gpu_ids,
                                                pretrained_encoder=None if opt.no_use_pretrained_vgg else 'models/vgg_normalised.pth',
                                                pretrained_decoder=None if not opt.use_pretrained_decoder else 'models/decoder.pth')
 
-        self.genColorB2A = networks.define_Net(net_type='adainstyletransfer', gpu_ids=self.gpu_ids,
+        self.genColorB2A = networks.define_Net(netType='adainstyletransfer', gpu_ids=self.gpu_ids,
                                                pretrained_encoder=None if opt.no_use_pretrained_vgg else 'models/vgg_normalised.pth',
                                                pretrained_decoder=None if not opt.use_pretrained_decoder else 'models/decoder.pth')
 

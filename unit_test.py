@@ -1,3 +1,4 @@
+import functools
 import itertools
 import torch
 import torch.nn as nn
@@ -5,6 +6,8 @@ import torch.nn.functional as F
 import torchvision
 
 from data import create_dataset
+from models.networks import VGG19
+
 from options.train_options import TrainOptions
 from options.train_options import TrainOptions
 from data import create_dataset
@@ -40,13 +43,19 @@ def defineG():
     net = networks.StyleTransfer(model_path='models/vgg_normalised.pth')
     return net
 
-if __name__ == '__main__':
+def calc_content_loss(input, target):
+    assert (input.size() == target.size())
+    m = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    for b in range(input.size()[0]):
 
-    x = torch.randn(1, 3, 4, 4)
-    y = torch.randn(1, 3, 4, 4)
-    m = nn.L1Loss()
-    z = m(x, y)
-    print(x)
-    print(y)
-    print(z)
-    print(abs(x - y))
+        input[b] = m(input[b])
+        target[b] = m(target[b])
+
+
+if __name__ == '__main__':
+    x = torch.randn(1, 3, 256, 256)
+    m = VGG19()
+    z = m(x)
+    print()
+
+
