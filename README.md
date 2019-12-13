@@ -40,3 +40,13 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 ### drawing2paint / cyclegan + adain_style
 
 `python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_adain_style_pretrained --model cycle_gan_colorization --no_flip --use_pretrained_decoder`
+
+
+### drawing2paint / cycle_gan + vgg
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_vgg_pretrained --model cycle_gan_vgg_model --no_dropout`
+
+
+### art2photo / cycle_gan
+
+`python train.py --dataroot ./dataset/art2photo --name a2p_cycle --model cycle_gan --no_dropout`

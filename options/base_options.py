@@ -38,7 +38,7 @@ class BaseOptions():
         # base_model
         parser.add_argument('--ngf', type=int, default=64, help='numbers of generator filters in the conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='numbers of discriminator filters in the conv layer')
-        parser.add_argument('--norm', type=str, default='instance_norm', help='instance normalization or batch normalization [instance | batch | none]')
+        parser.add_argument('--norm', type=str, default='instance_norm', help=' [instance_norm | batch_norm | none] ')
         parser.add_argument('--init_type', type=str, default='normal',
                             help='network initialization [normal | xavier | kaiming | orthogonal]')
         parser.add_argument('--init_gain', type=float, default=0.02,
