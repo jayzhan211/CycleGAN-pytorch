@@ -15,7 +15,7 @@ class ColorizationDataset(BaseDataset):
         return parser
 
     def __init__(self, opt):
-        super(ColorizationDataset, self).__init__(opt)
+        BaseDataset.__init__(self, opt)
         self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
         self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
 

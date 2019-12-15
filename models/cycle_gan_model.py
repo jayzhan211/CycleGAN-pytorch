@@ -91,7 +91,7 @@ class CycleGANModel(BaseModel):
         if self.isTrain:  # define discriminators
             self.disA = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            self.disB = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+            self.disB = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
         if self.isTrain:
