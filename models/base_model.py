@@ -194,7 +194,7 @@ class BaseModel(ABC):
                     net = getattr(self, name)
                     if isinstance(net, torch.nn.DataParallel):
                         net = net.module
-                    print('loading the model from %s' % load_path)
+                    print('loading the model from {}'.format(load_path))
                     # if you are using PyTorch newer than 0.4 (e.g., built from
                     # GitHub source), you can remove str() on self.device
                     state_dict = torch.load(load_path, map_location=self.device)

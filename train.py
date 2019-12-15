@@ -3,6 +3,11 @@ from data import create_dataset
 from models import create_model
 from utils.visualizer import Visualizer
 import time
+import PIL
+
+PIL.Image.MAX_IMAGE_PIXELS = 987654979
+                             # 933120000
+
 
 if __name__ == '__main__':
     opt = TrainOptions().parse()

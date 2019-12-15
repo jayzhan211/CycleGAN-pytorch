@@ -4,7 +4,7 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 * dataset => private toy dataset
 
 # TODO
-- [ ] None
+- [ ] colorization dataset flip the same way for rgb and grayscale
 
 # Command Line
 
@@ -44,7 +44,19 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 
 ### drawing2paint / cycle_gan + vgg
 
-`python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_vgg_pretrained --model cycle_gan_vgg --no_dropout`
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_vgg_pretrained --model cycle_gan_vgg_model --no_dropout`
 
 
-`python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_vgg_pretrained --model cycle_gan_vgg --no_dropout --content_weight 0.0`
+### art2photo / cycle_gan
+
+`python train.py --dataroot ./dataset/art2photo --name a2p_cycle --model cycle_gan --no_dropout`
+
+`python train.py --dataroot ./dataset/art2photo --name a2p_cycle --model cycle_gan --no_dropout --continue_train`
+
+### horse2zebra / cycle_gan
+
+`python train.py --dataroot ./dataset/horse2zebra --name h2z_cycle2`
+
+### horse2zebra / double_cycle_gan_colorization
+
+`python train.py --dataroot ./dataset/horse2zebra --name h2z_doublecycle --model double_cycle_gan_colorization`

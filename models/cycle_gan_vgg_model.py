@@ -15,12 +15,12 @@ class CycleGANVggModel(BaseModel):
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
             parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
             parser.add_argument('--identity_weight', type=float, default=10.0, help='weight for identity loss')
-            parser.add_argument('--content_weight', type=float, default=100.0, help='weight for content loss')
+            parser.add_argument('--content_weight', type=float, default=0.0, help='weight for content loss')
             # parser.add_argument('--style_weight', type=float, default=0.2, help='weight for style loss')
             # parser.add_argument('--rec_weight', type=float, default=1.0, help='weight for style loss')
 
             # parser.add_argument('--img_size', type=int, default=256, help='size of image')
-            parser.add_argument('--netG', type=str, default='resnet_6blocks',
+            parser.add_argument('--netG', type=str, default='resnet_9blocks',
                                 help='specify generator architecture')
             parser.add_argument('--netD', type=str, default='n_layers',
                                 help='specify discriminator architecture')
@@ -159,9 +159,9 @@ class CycleGANVggModel(BaseModel):
         fake_GB_logit = self.disB(self.fake_A2B)
 
         fake_A_feats = self.netVgg(self.real_A)
-        fake_A2B_feats = self.netVgg(self.fake_A2B)
+        fake_A2B_feats = self.netVgg(self.fake_A2B.detach())
         fake_B_feats = self.netVgg(self.real_B)
-        fake_B2A_feats = self.netVgg(self.fake_B2A)
+        fake_B2A_feats = self.netVgg(self.fake_B2A.detach())
 
         # loss
 
@@ -174,9 +174,9 @@ class CycleGANVggModel(BaseModel):
         loss_idt_G_A = self.L1_loss(self.fake_A2A, self.real_A)
         loss_idt_G_B = self.L1_loss(self.fake_B2B, self.real_B)
 
-        loss_con_G_A = 0
-        loss_con_G_B = 0
-        assert len(fake_A_feats) == len(fake_B_feats) == len(fake_A2B_feats) == len(fake_B2A_feats) == 4
+        loss_con_G_A = 0.0
+        loss_con_G_B = 0.0
+
         for i in range(4):
             loss_con_G_A += self.calc_content_loss(fake_A_feats[i], fake_A2B_feats[i])
             loss_con_G_B += self.calc_content_loss(fake_B_feats[i], fake_B2A_feats[i])
