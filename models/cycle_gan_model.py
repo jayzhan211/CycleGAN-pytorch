@@ -41,11 +41,6 @@ class CycleGANModel(BaseModel):
             parser.add_argument('--dis_weight', type=float, default=0.5, help='weight for discriminator loss')
             parser.add_argument('--cyc_weight', type=float, default=10.0, help='weight for cycle loss')
             parser.add_argument('--idt_weight', type=float, default=5.0, help='weight for identity loss')
-            parser.add_argument('--netD', type=str, default='n_layers',
-                                help='specify discriminator architecture [basic | n_layers')
-            parser.add_argument('--netG', type=str, default='resnet_9blocks',
-                                help='specify generator architecture in CycleGAN [ resnet_9blocks | resnet_6blocks ]')
-            parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD == n_layers')
 
         return parser
 
@@ -81,18 +76,23 @@ class CycleGANModel(BaseModel):
             self.model_names.extend(['disA', 'disB'])
 
         # define network
-        self.genA2B = networks.define_G(opt.input_nc, opt.output_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
-                                        norm=opt.norm, use_dropout=not opt.no_dropout,
-                                        init_type=opt.init_type, init_gain=opt.init_gain)
-        self.genB2A = networks.define_G(opt.output_nc, opt.input_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
-                                        norm=opt.norm, use_dropout=not opt.no_dropout,
-                                        init_type=opt.init_type, init_gain=opt.init_gain)
+
+        self.genA2B = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.genB2A = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        # self.genA2B = networks.define_G(opt.input_nc, opt.output_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
+        #                                 norm=opt.norm, use_dropout=not opt.no_dropout,
+        #                                 init_type=opt.init_type, init_gain=opt.init_gain)
+        # self.genB2A = networks.define_G(opt.output_nc, opt.input_nc, ngf=opt.ngf, netG=opt.netG, gpu_ids=self.gpu_ids,
+        #                                 norm=opt.norm, use_dropout=not opt.no_dropout,
+        #                                 init_type=opt.init_type, init_gain=opt.init_gain)
 
         if self.isTrain:  # define discriminators
             self.disA = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, init_type=opt.init_type, init_gain=opt.init_gain, gpu_ids=self.gpu_ids)
-            self.disB = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, init_type=opt.init_type, init_gain=opt.init_gain, gpu_ids=self.gpu_ids)
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.disB = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
         if self.isTrain:
 

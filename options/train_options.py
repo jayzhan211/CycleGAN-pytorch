@@ -37,7 +37,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 
         # training parameters
-        parser.add_argument('--niter', type=int, default=400, help='# of iter at starting learning rate')
+        parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')
         parser.add_argument('--niter_decay', type=int, default=100,
                             help='# of iter to linearly decay learning rate to zero')
         parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
@@ -52,5 +52,6 @@ class TrainOptions(BaseOptions):
                             help='multiply by a weight for each iterations')
         parser.add_argument('--weight_decay', type=float, default=0.0001,
                             help='the weight decay in adam optimizer')
+
         self.isTrain = True
         return parser
