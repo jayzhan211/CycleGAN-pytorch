@@ -1282,15 +1282,6 @@ def define_Net(netType,
                pretrained_decoder=None):
     """
 
-    :param input_nc:
-    :param ndf:
-    :param netD:
-    :param n_layers:
-    :param norm:
-    :param init_type:
-    :param init_gain:
-    :param gpu_ids:
-    :return:
     """
     net = None
 

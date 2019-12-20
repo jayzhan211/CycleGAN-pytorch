@@ -60,3 +60,11 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 ### horse2zebra / double_cycle_gan_colorization
 
 `python train.py --dataroot ./dataset/horse2zebra --name h2z_doublecycle --model double_cycle_gan_colorization`
+
+### draw2paint / double_cycle_gan_colorization
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle2 --model double_cycle_gan_colorization`
+
+### draw2paint / cycle_gan_colorization
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cyclecolor --model cycle_gan_colorization`

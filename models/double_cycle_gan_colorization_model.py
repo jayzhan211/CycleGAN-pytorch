@@ -6,6 +6,7 @@ from torch import nn
 from .base_model import BaseModel
 from . import networks
 
+
 class DoubleCycleGANColorizationModel(BaseModel):
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
@@ -61,7 +62,6 @@ class DoubleCycleGANColorizationModel(BaseModel):
             'fake_A_RGB',
         ]
 
-
         self.visual_names = visual_names_A + visual_names_B + visual_names_C
 
         self.model_names = [
@@ -70,21 +70,21 @@ class DoubleCycleGANColorizationModel(BaseModel):
         ]
         if self.isTrain:
             self.model_names.extend(['disA_S', 'disB_S', 'disA_C', 'disB_C'])
-        
+
         # define shape model
         self.genA2B_S = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        
+                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+
         self.genB2A_S = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        
-        #define color model
+                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+
+        # define color model
         self.genA2B_C = networks.define_G(1, 3, opt.ngf, opt.netG, opt.norm,
                                           not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
         self.genB2A_C = networks.define_G(3, 1, opt.ngf, opt.netG, opt.norm,
                                           not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        
+
         if self.isTrain:  # define discriminators
             self.disA_S = networks.define_D(1, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
@@ -95,25 +95,26 @@ class DoubleCycleGANColorizationModel(BaseModel):
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
             self.disB_C = networks.define_D(1, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-            
-        if self.isTrain:
 
+        if self.isTrain:
             # define loss functions
 
             self.L1_loss = nn.L1Loss().to(self.device)
             self.MSE_loss = nn.MSELoss().to(self.device)
 
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G_S = torch.optim.Adam(itertools.chain(self.genA2B_S.parameters(), self.genB2A_S.parameters()),
-                                                lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_G_S = torch.optim.Adam(
+                itertools.chain(self.genA2B_S.parameters(), self.genB2A_S.parameters()),
+                lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D_S = torch.optim.Adam(itertools.chain(self.disA_S.parameters(), self.disB_S.parameters()),
-                                                lr=opt.lr, betas=(opt.beta1, 0.999))
-            
-            self.optimizer_G_C = torch.optim.Adam(itertools.chain(self.genA2B_C.parameters(), self.genB2A_C.parameters()),
-                                                lr=opt.lr, betas=(opt.beta1, 0.999))
+                                                  lr=opt.lr, betas=(opt.beta1, 0.999))
+
+            self.optimizer_G_C = torch.optim.Adam(
+                itertools.chain(self.genA2B_C.parameters(), self.genB2A_C.parameters()),
+                lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D_C = torch.optim.Adam(itertools.chain(self.disA_C.parameters(), self.disB_C.parameters()),
-                                                lr=opt.lr, betas=(opt.beta1, 0.999))
-            
+                                                  lr=opt.lr, betas=(opt.beta1, 0.999))
+
             self.optimizers.append(self.optimizer_G_S)
             self.optimizers.append(self.optimizer_D_S)
             self.optimizers.append(self.optimizer_G_C)
@@ -131,21 +132,18 @@ class DoubleCycleGANColorizationModel(BaseModel):
             input (dict): include the data itself and its metadata information.
         The option 'direction' can be used to swap domain A and domain B.
         """
-        A2B = self.opt.direction == ['AtoB', 'A2B']
+        A2B = self.opt.direction in ['AtoB', 'A2B']
         self.real_A_RGB = input['A_RGB' if A2B else 'B_RGB'].to(self.device)
         self.real_B_RGB = input['B_RGB' if A2B else 'A_RGB'].to(self.device)
         self.real_A_Gray = input['A_Gray' if A2B else 'B_Gray'].to(self.device)
         self.real_B_Gray = input['B_Gray' if A2B else 'A_Gray'].to(self.device)
         self.image_paths = input['A_paths' if A2B else 'B_paths']
-        
-        
-    
+
     def forward(self):
 
         self.forward_S()
         self.forward_C()
- 
-        
+
     def optimize_parameters(self):
 
         self.forward_S()
@@ -163,7 +161,7 @@ class DoubleCycleGANColorizationModel(BaseModel):
 
         self.forward_C()
 
-        # S
+        # C
         self.set_requires_grad([self.disA_C, self.disA_C], False)
         self.optimizer_G_C.zero_grad()
         self.backward_G_C()
@@ -220,8 +218,6 @@ class DoubleCycleGANColorizationModel(BaseModel):
         loss_D = (self.loss_D_A + self.loss_D_B) * self.dis_weight
         loss_D.backward()
 
-
-
     def forward_C(self):
         # C
         self.fake_A2B_RGB = self.genA2B_C(self.fake_A2B_Gray.detach())
@@ -235,9 +231,9 @@ class DoubleCycleGANColorizationModel(BaseModel):
         fake_B_logit = self.disB_C(self.fake_A_Gray)
 
         self.loss_adv_G_A_C = self.MSE_loss(fake_A_logit,
-                                          torch.ones_like(fake_A_logit).to(self.device))
+                                            torch.ones_like(fake_A_logit).to(self.device))
         self.loss_adv_G_B_C = self.MSE_loss(fake_B_logit,
-                                          torch.ones_like(fake_B_logit).to(self.device))
+                                            torch.ones_like(fake_B_logit).to(self.device))
 
         self.loss_rec_G_A_C = self.L1_loss(self.fake_A2B2A_Gray, self.fake_A2B_Gray.detach())
         self.loss_rec_G_B_C = self.L1_loss(self.fake_A_RGB, self.real_A_RGB)
@@ -246,8 +242,8 @@ class DoubleCycleGANColorizationModel(BaseModel):
         # self.loss_idt_G_B = self.L1_loss(self.fake_B2B_Gray, self.real_B_Gray)
 
         loss_G_C = (self.loss_adv_G_A_C + self.loss_adv_G_B_C) * self.adv_weight + \
-                 (self.loss_rec_G_A_C + self.loss_rec_G_B_C) * self.cyc_weight
-                 # (self.loss_idt_G_A + self.loss_idt_G_B) * self.idt_weight
+                   (self.loss_rec_G_A_C + self.loss_rec_G_B_C) * self.cyc_weight * 10
+        # (self.loss_idt_G_A + self.loss_idt_G_B) * self.idt_weight
 
         loss_G_C.backward()
 
@@ -258,13 +254,10 @@ class DoubleCycleGANColorizationModel(BaseModel):
         fake_B_logit = self.disA_C(self.fake_A2B_RGB.detach())
 
         self.loss_D_A_C = self.MSE_loss(real_B_logit, torch.ones_like(real_B_logit).to(self.device)) + \
-                        self.MSE_loss(fake_B_logit, torch.zeros_like(fake_B_logit).to(self.device))
+                          self.MSE_loss(fake_B_logit, torch.zeros_like(fake_B_logit).to(self.device))
 
         self.loss_D_B_C = self.MSE_loss(real_A_logit, torch.ones_like(real_A_logit).to(self.device)) + \
-                        self.MSE_loss(fake_A_logit, torch.zeros_like(fake_A_logit).to(self.device))
+                          self.MSE_loss(fake_A_logit, torch.zeros_like(fake_A_logit).to(self.device))
 
         loss_D_C = (self.loss_D_A_C + self.loss_D_B_C) * self.dis_weight
         loss_D_C.backward()
-        
-
-

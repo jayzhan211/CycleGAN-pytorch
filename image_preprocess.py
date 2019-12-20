@@ -14,8 +14,8 @@ add new folder datsetA or datasetB and push only one dataset at once
 """
 
 if __name__ == '__main__':
-    datasetA = 'train_9'
-    datasetB = 'photo_9'
+    datasetA = 'drawing'
+    datasetB = 'painting'
     ratio = 0.9
 
     # =========================================================================
