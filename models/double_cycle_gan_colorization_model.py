@@ -14,9 +14,13 @@ class DoubleCycleGANColorizationModel(BaseModel):
         parser.set_defaults(dataset_mode='colorization')
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
-            parser.add_argument('--dis_weight', type=float, default=0.5, help='weight for discriminator loss')
+            parser.add_argument('--dis_weight', type=float, default=0.25, help='weight for discriminator loss')
             parser.add_argument('--cyc_weight', type=float, default=10.0, help='weight for cycle loss')
             parser.add_argument('--idt_weight', type=float, default=5.0, help='weight for identity loss')
+            parser.add_argument('--adv_color_weight', type=float, default=10.0, help='weight for adversarial loss')
+            parser.add_argument('--dis_color_weight', type=float, default=1.0, help='weight for discriminator loss')
+            parser.add_argument('--cyc_color_weight', type=float, default=100.0, help='weight for cycle loss')
+            # parser.add_argument('--idt_color_weight', type=float, default=50.0, help='weight for identity loss')
 
         return parser
 
@@ -124,6 +128,9 @@ class DoubleCycleGANColorizationModel(BaseModel):
             self.dis_weight = opt.dis_weight
             self.cyc_weight = opt.cyc_weight
             self.idt_weight = opt.idt_weight
+            self.adv_color_weight = opt.adv_color_weight
+            self.dis_color_weight = opt.dis_color_weight
+            self.cyc_color_weight = opt.cyc_color_weight
 
     def set_input(self, input):
         """
@@ -241,8 +248,8 @@ class DoubleCycleGANColorizationModel(BaseModel):
         # self.loss_idt_G_A = self.L1_loss(self.fake_A2A_Gray, self.real_A_Gray)
         # self.loss_idt_G_B = self.L1_loss(self.fake_B2B_Gray, self.real_B_Gray)
 
-        loss_G_C = (self.loss_adv_G_A_C + self.loss_adv_G_B_C) * self.adv_weight + \
-                   (self.loss_rec_G_A_C + self.loss_rec_G_B_C) * self.cyc_weight * 10
+        loss_G_C = (self.loss_adv_G_A_C + self.loss_adv_G_B_C) * self.adv_color_weight + \
+                   (self.loss_rec_G_A_C + self.loss_rec_G_B_C) * self.cyc_color_weight
         # (self.loss_idt_G_A + self.loss_idt_G_B) * self.idt_weight
 
         loss_G_C.backward()
@@ -259,5 +266,5 @@ class DoubleCycleGANColorizationModel(BaseModel):
         self.loss_D_B_C = self.MSE_loss(real_A_logit, torch.ones_like(real_A_logit).to(self.device)) + \
                           self.MSE_loss(fake_A_logit, torch.zeros_like(fake_A_logit).to(self.device))
 
-        loss_D_C = (self.loss_D_A_C + self.loss_D_B_C) * self.dis_weight
+        loss_D_C = (self.loss_D_A_C + self.loss_D_B_C) * self.dis_color_weight
         loss_D_C.backward()

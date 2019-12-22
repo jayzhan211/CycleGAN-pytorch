@@ -4,7 +4,6 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 * dataset => private toy dataset
 
 # TODO
-- [ ] colorization dataset flip the same way for rgb and grayscale
 
 # Command Line
 
@@ -65,6 +64,13 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 
 `python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle2 --model double_cycle_gan_colorization`
 
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle3 --model double_cycle_gan_colorization`
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle4 --model double_cycle_gan_colorization --dis_weight 0.25`
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle5 --model double_cycle_gan_colorization`
+
+
 ### draw2paint / cycle_gan_colorization
 
-`python train.py --dataroot ./dataset/draw2paint --name d2p_cyclecolor --model cycle_gan_colorization`
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cyclecolor3 --model cycle_gan_colorization`
