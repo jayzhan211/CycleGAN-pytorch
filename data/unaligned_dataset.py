@@ -15,7 +15,8 @@ class UnalignedDataset(BaseDataset):
     '/path/to/data/testA' and '/path/to/data/testB' during test time.
     """
     def __init__(self, opt):
-        BaseDataset.__init__(self, opt)
+        super(UnalignedDataset, self).__init__(opt)
+
         self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
         self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
 
@@ -23,7 +24,7 @@ class UnalignedDataset(BaseDataset):
         self.B_paths = make_dataset(self.dir_B, opt.max_dataset_size)
         self.A_size = len(self.A_paths)
         self.B_size = len(self.B_paths)
-        b2a = self.opt.direction in ['BtoA', 'B2A']
+        b2a = self.opt.direction in ['BtoA']
         input_nc = self.opt.output_nc if b2a else self.opt.input_nc
         output_nc = self.opt.input_nc if b2a else self.opt.output_nc
         self.transform_A = get_transform(self.opt, grayscale=(input_nc == 1))

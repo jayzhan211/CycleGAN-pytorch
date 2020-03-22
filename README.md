@@ -70,7 +70,10 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 
 `python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle5 --model double_cycle_gan_colorization`
 
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle6 --model double_cycle_gan_colorization`
+
+`python train.py --dataroot ./dataset/draw2paint --name d2p_doublecycle4 --model double_cycle_gan_colorization --continue_train`
 
 ### draw2paint / cycle_gan_colorization
 
-`python train.py --dataroot ./dataset/draw2paint --name d2p_cyclecolor3 --model cycle_gan_colorization`
+`python train.py --dataroot ./dataset/draw2paint --name d2p_cycle_gan_colorization --model cycle_gan_colorization`

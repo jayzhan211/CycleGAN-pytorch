@@ -79,7 +79,7 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
         osize = [opt.load_size, opt.load_size]
         transform_list.append(transforms.Resize(osize, method))
     elif 'scale_width' in opt.preprocess:
-        transform_list.append(transforms.Lambda(lambda img: __scale_width(img, opt.load_size, method)))
+        transform_list.append(transforms.Lambda(lambda img: __scale_width(img, opt.load_size, opt.crop_size, method)))
 
     if 'crop' in opt.preprocess:
         if params is None:
@@ -101,7 +101,6 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
         if grayscale:
             transform_list += [transforms.Normalize((0.5,), (0.5,))]
         else:
-            # transform_list += [transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))]
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     return transforms.Compose(transform_list)
 
@@ -110,19 +109,19 @@ def __make_power_2(img, base, method=Image.BICUBIC):
     ow, oh = img.size
     h = int(round(oh / base) * base)
     w = int(round(ow / base) * base)
-    if (h == oh) and (w == ow):
+    if h == oh and w == ow:
         return img
 
     __print_size_warning(ow, oh, w, h)
     return img.resize((w, h), method)
 
 
-def __scale_width(img, target_width, method=Image.BICUBIC):
+def __scale_width(img, target_size, crop_size, method=Image.BICUBIC):
     ow, oh = img.size
-    if (ow == target_width):
+    if ow == target_size and oh >= crop_size:
         return img
-    w = target_width
-    h = int(target_width * oh / ow)
+    w = target_size
+    h = int(max(target_size * oh / ow, crop_size))
     return img.resize((w, h), method)
 
 

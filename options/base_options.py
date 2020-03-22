@@ -40,7 +40,8 @@ class BaseOptions():
                             help='specify discriminator architecture [basic | n_layers | pixel]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
         parser.add_argument('--netG', type=str, default='resnet_9blocks',
                             help='specify generator architecture [resnet_9blocks | resnet_6blocks | unet_256 | unet_128]')
-        parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
+        parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
+        parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
         parser.add_argument('--norm', type=str, default='instance',
                             help='instance normalization or batch normalization [instance | batch | none]')
         parser.add_argument('--init_type', type=str, default='normal',
@@ -56,7 +57,7 @@ class BaseOptions():
         parser.add_argument('--serial_batches', action='store_true',
                             help='if true, takes images in order to make batches, otherwise takes them randomly')
         parser.add_argument('--num_threads', default=4, type=int, help='numbers threads for loading data')
-        parser.add_argument('--batch_size', type=int, default=1, help='batch size')
+        parser.add_argument('--batch_size', type=int, default=1, help='The size of batch size')
         parser.add_argument('--load_size', type=int, default=286, help='scale images to this size')
         parser.add_argument('--crop_size', type=int, default=256, help='then crop to this size')
         parser.add_argument('--max_dataset_size', type=int, default=float("inf"),

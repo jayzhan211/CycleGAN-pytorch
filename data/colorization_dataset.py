@@ -1,57 +1,61 @@
+import os.path
 from data.base_dataset import BaseDataset, get_transform
 from data.image_folder import make_dataset
+from skimage import color  # require skimage
 from PIL import Image
-import os.path
-import random
+import numpy as np
+import torchvision.transforms as transforms
 
 
 class ColorizationDataset(BaseDataset):
-    """
-    Load RGB images, return (L, RGB)
-    '--model colorization'
+    """This dataset class can load a set of natural images in RGB, and convert RGB format into (L, ab) pairs in Lab color space.
+    This dataset is required by pix2pix-based colorization model ('--model colorization')
     """
     @staticmethod
     def modify_commandline_options(parser, is_train):
+        """Add new dataset-specific options, and rewrite default values for existing options.
+        Parameters:
+            parser          -- original option parser
+            is_train (bool) -- whether training phase or test phase. You can use this flag to add training-specific or test-specific options.
+        Returns:
+            the modified parser.
+        By default, the number of channels for input image  is 1 (L) and
+        the number of channels for output image is 2 (ab). The direction is from A to B
+        """
+        parser.set_defaults(input_nc=1, output_nc=2, direction='AtoB')
         return parser
 
     def __init__(self, opt):
+        """Initialize this dataset class.
+        Parameters:
+            opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
+        """
         BaseDataset.__init__(self, opt)
-        self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')
-        self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')
-
-        self.A_paths = sorted(make_dataset(self.dir_A, opt.max_dataset_size))
-        self.B_paths = sorted(make_dataset(self.dir_B, opt.max_dataset_size))
-        self.A_size = len(self.A_paths)
-        self.B_size = len(self.B_paths)
-
-        self.transform_A_RGB = get_transform(self.opt)
-        self.transform_B_RGB = get_transform(self.opt)
-        self.transform_A_gray = get_transform(self.opt, grayscale=True)
-        self.transform_B_gray = get_transform(self.opt, grayscale=True)
+        self.dir = os.path.join(opt.dataroot, opt.phase)
+        self.AB_paths = sorted(make_dataset(self.dir, opt.max_dataset_size))
+        assert(opt.input_nc == 1 and opt.output_nc == 2 and opt.direction == 'AtoB')
+        self.transform = get_transform(self.opt, convert=False)
 
     def __getitem__(self, index):
-        A_path = self.A_paths[index % self.A_size]
-        if self.opt.serial_batches:
-            index_B = index % self.B_size
-        else:
-            index_B = random.randint(0, self.B_size - 1)
-        B_path = self.B_paths[index_B]
-        A_img = Image.open(A_path).convert('RGB')
-        B_img = Image.open(B_path).convert('RGB')
-
-        A_RGB = self.transform_A_RGB(A_img)
-        B_RGB = self.transform_B_RGB(B_img)
-        A_gray = self.transform_A_gray(A_img)
-        B_gray = self.transform_B_gray(B_img)
-
-        return {
-            'A_RGB': A_RGB,
-            'B_RGB': B_RGB,
-            'A_Gray': A_gray,
-            'B_Gray': B_gray,
-            'A_paths': A_path,
-            'B_paths': B_path
-        }
+        """Return a data point and its metadata information.
+        Parameters:
+            index - - a random integer for data indexing
+        Returns a dictionary that contains A, B, A_paths and B_paths
+            A (tensor) - - the L channel of an image
+            B (tensor) - - the ab channels of the same image
+            A_paths (str) - - image paths
+            B_paths (str) - - image paths (same as A_paths)
+        """
+        path = self.AB_paths[index]
+        im = Image.open(path).convert('RGB')
+        im = self.transform(im)
+        im = np.array(im)
+        lab = color.rgb2lab(im).astype(np.float32)
+        lab_t = transforms.ToTensor()(lab)
+        A = lab_t[[0], ...] / 50.0 - 1.0
+        B = lab_t[[1, 2], ...] / 110.0
+        return {'A': A, 'B': B, 'A_paths': path, 'B_paths': path}
 
     def __len__(self):
-        return max(self.A_size, self.B_size)
+        """Return the total number of images in the dataset."""
+        return len(self.AB_paths)
