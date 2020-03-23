@@ -17,9 +17,9 @@ class DoubleCycleGANColorizationModel(BaseModel):
             parser.add_argument('--dis_weight', type=float, default=0.25, help='weight for discriminator loss')
             parser.add_argument('--cyc_weight', type=float, default=10.0, help='weight for cycle loss')
             parser.add_argument('--idt_weight', type=float, default=5.0, help='weight for identity loss')
-            parser.add_argument('--adv_color_weight', type=float, default=10.0, help='weight for adversarial loss')
-            parser.add_argument('--dis_color_weight', type=float, default=1.0, help='weight for discriminator loss')
-            parser.add_argument('--cyc_color_weight', type=float, default=100.0, help='weight for cycle loss')
+            parser.add_argument('--adv_color_weight', type=float, default=1.0, help='weight for adversarial loss')
+            parser.add_argument('--dis_color_weight', type=float, default=0.25, help='weight for discriminator loss')
+            parser.add_argument('--cyc_color_weight', type=float, default=10.0, help='weight for cycle loss')
             # parser.add_argument('--idt_color_weight', type=float, default=50.0, help='weight for identity loss')
 
         return parser

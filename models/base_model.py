@@ -3,6 +3,7 @@ import torch
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from . import networks
+from glob import glob
 
 
 class BaseModel(ABC):
@@ -146,17 +147,14 @@ class BaseModel(ABC):
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
+        save_path = os.path.join(self.save_dir, 'epoch_{:07d}.pth'.format(epoch))
+        params = {}
         for name in self.model_names:
             if isinstance(name, str):
-                save_filename = '%s_net_%s.pth' % (epoch, name)
-                save_path = os.path.join(self.save_dir, save_filename)
-                net = getattr(self, 'net' + name)
+                net = getattr(self, name)
+                params[name] = net.state_dict()
 
-                if len(self.gpu_ids) > 0 and torch.cuda.is_available():
-                    torch.save(net.module.cpu().state_dict(), save_path)
-                    net.cuda(self.gpu_ids[0])
-                else:
-                    torch.save(net.cpu().state_dict(), save_path)
+        torch.save(params, save_path)
 
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
         """Fix InstanceNorm checkpoints incompatibility (prior to 0.4)"""
@@ -178,24 +176,18 @@ class BaseModel(ABC):
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
-        for name in self.model_names:
-            if isinstance(name, str):
-                load_filename = '%s_net_%s.pth' % (epoch, name)
-                load_path = os.path.join(self.save_dir, load_filename)
-                net = getattr(self, 'net' + name)
-                if isinstance(net, torch.nn.DataParallel):
-                    net = net.module
-                print('loading the model from %s' % load_path)
-                # if you are using PyTorch newer than 0.4 (e.g., built from
-                # GitHub source), you can remove str() on self.device
-                state_dict = torch.load(load_path, map_location=str(self.device))
-                if hasattr(state_dict, '_metadata'):
-                    del state_dict._metadata
 
-                # patch InstanceNorm checkpoints prior to 0.4
-                for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
-                    self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
-                net.load_state_dict(state_dict)
+        model_list = glob(os.path.join(self.save_dir, '*.pth'))
+        if len(model_list) > 0:
+            model_list.sort()
+            iter = min(int(model_list[-1].split('_')[-1].split('.')[0]), epoch)
+            params = torch.load(os.path.join(self.save_dir, 'epoch_{:07d}.pth'.format(iter)))
+            for name in self.model_names:
+                if isinstance(name, str):
+                    net = getattr(self, name)
+                    if isinstance(net, torch.nn.DataParallel):
+                        net = net.module
+                    net.load_state_dict(params[name])
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture

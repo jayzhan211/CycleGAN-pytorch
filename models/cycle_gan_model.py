@@ -37,6 +37,7 @@ class CycleGANModel(BaseModel):
         Dropout is not used in the original CycleGAN paper.
         """
         parser.set_defaults(no_dropout=True)  # default CycleGAN did not use dropout
+        parser.set_defaults(no_imagepool=True)
         if is_train:
             parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
             parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
@@ -84,8 +85,12 @@ class CycleGANModel(BaseModel):
         if self.isTrain:
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert(opt.input_nc == opt.output_nc)
-            self.fake_A_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
-            self.fake_B_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
+
+            self.fake_A_pool = None
+            self.fake_B_pool = None
+            if not opt.no_imagepool:
+                self.fake_A_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
+                self.fake_B_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
             # define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle = torch.nn.L1Loss()
@@ -140,12 +145,19 @@ class CycleGANModel(BaseModel):
 
     def backward_D_A(self):
         """Calculate GAN loss for discriminator D_A"""
-        fake_B = self.fake_B_pool.query(self.fake_B)
+        if self.fake_B_pool is None:
+            fake_B = self.fake_B
+        else:
+            fake_B = self.fake_B_pool.query(self.fake_B)
+
         self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B)
 
     def backward_D_B(self):
         """Calculate GAN loss for discriminator D_B"""
-        fake_A = self.fake_A_pool.query(self.fake_A)
+        if self.fake_A_pool is None:
+            fake_A = self.fake_A
+        else:
+            fake_A = self.fake_A_pool.query(self.fake_A)
         self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
 
     def backward_G(self):

@@ -4,7 +4,7 @@ from .networks import define_G, define_D, RhoClipper
 import torch.nn as nn
 import torch
 import numpy as np
-from utils.util import denorm, numpy2tensor, tensor2numpy, RGB2BGR, cam
+from utils.util import denorm, tensor2numpy, RGB2BGR, cam
 from models.networks import ResnetGeneratorUGATIT, DiscriminatorUGATIT
 
 class UGATITModel(BaseModel):
@@ -22,7 +22,10 @@ class UGATITModel(BaseModel):
             parser.add_argument('--identity_weight', type=float, default=10.0, help='weight for identity loss')
             parser.add_argument('--cam_weight', type=float, default=1000.0, help='weight for class activate map loss')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
-
+            parser.add_argument('--light', action='store_true', help='use light mode')
+            parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
+            parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
+            parser.add_argument('--weight_decay', type=float, default=0.0001, help='the weight decay in adam optimizer')
         return parser
 
     def __init__(self, opt):
@@ -39,26 +42,30 @@ class UGATITModel(BaseModel):
             'cam_G_A',
             'cam_G_B',
         ]
-        # visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'fake_A2B_heatmap', 'fake_A2A_heatmap', 'fake_A2B2A_heatmap']
-        # visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'fake_B2A_heatmap', 'fake_B2B_heatmap', 'fake_B2A2B_heatmap']
+        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'fake_A2B_heatmap', 'fake_A2A_heatmap', 'fake_A2B2A_heatmap']
+        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'fake_B2A_heatmap', 'fake_B2B_heatmap', 'fake_B2A2B_heatmap']
 
-        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A']
-        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B']
+        # visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A']
+        # visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B']
         self.visual_names = visual_names_A + visual_names_B
 
         self.model_names = ['genA2B', 'genB2A']
         if self.isTrain:
-            # self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
-            self.model_names.extend(['disA', 'disB'])
+            self.model_names.extend(['disGA', 'disGB', 'disLA', 'disLB'])
+            # self.model_names.extend(['disA', 'disB'])
 
         """ Define Generator, Discriminator """
-        self.genA2B = ResnetGeneratorUGATIT(opt.input_nc, opt.output_nc, opt.ngf, opt.n_res, opt.img_size,
-                                            opt.light).to(self.device)
-        self.genB2A = ResnetGeneratorUGATIT(opt.output_nc, opt.input_nc, opt.ngf, opt.n_res, opt.img_size,
-                                            opt.light).to(self.device)
+        self.genA2B = ResnetGeneratorUGATIT(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=opt.ngf,
+                                            n_blocks=opt.n_res, img_size=opt.img_size, light=opt.light).to(self.device)
+        self.genB2A = ResnetGeneratorUGATIT(input_nc=opt.output_nc, output_nc=opt.input_nc, ngf=opt.ngf,
+                                            n_blocks=opt.n_res, img_size=opt.img_size, light=opt.light).to(self.device)
 
-        self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
-        self.disB = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+        # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+        # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
+        self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+        self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+        self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+        self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
 
         """ Define Loss """
         self.L1_loss = nn.L1Loss().to(self.device)
@@ -75,6 +82,7 @@ class UGATITModel(BaseModel):
         self.optimizer_D = torch.optim.Adam(
             itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
                             self.disLA.parameters(), self.disLB.parameters()),
+            # itertools.chain(self.disA.parameters(), self.disB.parameters()),
             lr=opt.lr,
             betas=(opt.beta1, 0.999),
             weight_decay=opt.weight_decay)
@@ -91,11 +99,11 @@ class UGATITModel(BaseModel):
 
         self.img_size = opt.img_size
 
-    def set_input(self, _input):
+    def set_input(self, input):
         A2B = self.opt.direction in ['AtoB']
-        self.real_A = _input['A' if A2B else 'B'].to(self.device)
-        self.real_B = _input['B' if A2B else 'A'].to(self.device)
-        self.image_paths = _input['A_paths' if A2B else 'B_paths']
+        self.real_A = input['A' if A2B else 'B'].to(self.device)
+        self.real_B = input['B' if A2B else 'A'].to(self.device)
+        self.image_paths = input['A_paths' if A2B else 'B_paths']
 
     def forward(self):
 
@@ -199,13 +207,20 @@ class UGATITModel(BaseModel):
         self.genA2B.apply(self.RhoClipper)
         self.genB2A.apply(self.RhoClipper)
 
-        # self.realA
         self.fake_A2A_heatmap = fake_A2A_heatmap
         self.fake_A2B_heatmap = fake_A2B_heatmap
         self.fake_A2B2A_heatmap = fake_A2B2A_heatmap
         self.fake_A2A = fake_A2A
         self.fake_A2B = fake_A2B
         self.fake_A2B2A = fake_A2B2A
+
+
+        # self.fake_A2A_heatmap = cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size)
+        # self.fake_A2B_heatmap = cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size)
+        # self.fake_A2B2A_heatmap = cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size)
+        # self.fake_A2A = RGB2BGR(tensor2numpy(denorm(fake_A2A[0])))
+        # self.fake_A2B = RGB2BGR(tensor2numpy(denorm(fake_A2B[0])))
+        # self.fake_A2B2A = RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])))
 
         # self.realB
         self.fake_B2A_heatmap = fake_B2A_heatmap
