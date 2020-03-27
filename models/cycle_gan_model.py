@@ -37,11 +37,14 @@ class CycleGANModel(BaseModel):
         Dropout is not used in the original CycleGAN paper.
         """
         parser.set_defaults(no_dropout=True)  # default CycleGAN did not use dropout
-        parser.set_defaults(no_imagepool=True)
+
         if is_train:
             parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
             parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
             parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+            parser.add_argument('--no_imagepool', action='store_true', help='no imagepool for the model')
+
+        parser.set_defaults(no_imagepool=True)
 
         return parser
 
@@ -53,7 +56,12 @@ class CycleGANModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        self.loss_names = [
+            'D_A', 'D_B',
+            'G_A', 'G_B',
+            'cycle_A', 'idt_A',
+            'cycle_B', 'idt_B',
+        ]
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'rec_A']
         visual_names_B = ['real_B', 'fake_A', 'rec_B']
@@ -63,10 +71,9 @@ class CycleGANModel(BaseModel):
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
+        self.model_names = ['netG_A', 'netG_B']
         if self.isTrain:
-            self.model_names = ['G_A', 'G_B', 'D_A', 'D_B']
-        else:  # during test time, only load Gs
-            self.model_names = ['G_A', 'G_B']
+            self.model_names.extend(['netD_A', 'netD_B'])
 
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.

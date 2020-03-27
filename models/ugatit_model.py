@@ -4,8 +4,9 @@ from .networks import define_G, define_D, RhoClipper
 import torch.nn as nn
 import torch
 import numpy as np
-from utils.util import denorm, tensor2numpy, RGB2BGR, cam
+from utils.util import denorm, tensor2numpy, RGB2BGR, cam, tensor2im
 from models.networks import ResnetGeneratorUGATIT, DiscriminatorUGATIT
+
 
 class UGATITModel(BaseModel):
     """
@@ -16,6 +17,7 @@ class UGATITModel(BaseModel):
     def modify_commandline_options(parser, is_train=True):
         parser.set_defaults(no_dropout=True)
         parser.set_defaults(use_cam=True)
+        parser.set_defaults(display_nrows=7)
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
             parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
@@ -31,19 +33,22 @@ class UGATITModel(BaseModel):
     def __init__(self, opt):
         super(UGATITModel, self).__init__(opt)
         self.loss_names = [
-            'G_A',
-            'G_B',
-            'D_A',
-            'D_B',
-            'rec_G_A',
-            'rec_G_B',
-            'idt_G_A',
-            'idt_G_B',
-            'cam_G_A',
-            'cam_G_B',
+            'G', 'D',
+            # 'G_A',
+            # 'G_B',
+            # 'D_A',
+            # 'D_B',
+            # 'rec_G_A',
+            # 'rec_G_B',
+            # 'idt_G_A',
+            # 'idt_G_B',
+            # 'cam_G_A',
+            # 'cam_G_B',
         ]
-        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'fake_A2B_heatmap', 'fake_A2A_heatmap', 'fake_A2B2A_heatmap']
-        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'fake_B2A_heatmap', 'fake_B2B_heatmap', 'fake_B2A2B_heatmap']
+        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'fake_A2B_heatmap', 'fake_A2A_heatmap',
+                          'fake_A2B2A_heatmap']
+        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'fake_B2A_heatmap', 'fake_B2B_heatmap',
+                          'fake_B2A2B_heatmap']
 
         # visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A']
         # visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B']
@@ -100,10 +105,10 @@ class UGATITModel(BaseModel):
         self.img_size = opt.img_size
 
     def set_input(self, input):
-        A2B = self.opt.direction in ['AtoB']
-        self.real_A = input['A' if A2B else 'B'].to(self.device)
-        self.real_B = input['B' if A2B else 'A'].to(self.device)
-        self.image_paths = input['A_paths' if A2B else 'B_paths']
+        AtoB = self.opt.direction in ['AtoB']
+        self.real_A = input['A' if AtoB else 'B'].to(self.device)
+        self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
 
@@ -141,11 +146,11 @@ class UGATITModel(BaseModel):
         D_ad_cam_loss_LB = self.MSE_loss(real_LB_cam_logit, torch.ones_like(real_LB_cam_logit).to(self.device)) + \
                            self.MSE_loss(fake_LB_cam_logit, torch.zeros_like(fake_LB_cam_logit).to(self.device))
 
-        self.loss_D_A = self.adv_weight * (D_ad_loss_GA + D_ad_cam_loss_GA + D_ad_loss_LA + D_ad_cam_loss_LA)
-        self.loss_D_B = self.adv_weight * (D_ad_loss_GB + D_ad_cam_loss_GB + D_ad_loss_LB + D_ad_cam_loss_LB)
+        loss_D_A = self.adv_weight * (D_ad_loss_GA + D_ad_cam_loss_GA + D_ad_loss_LA + D_ad_cam_loss_LA)
+        loss_D_B = self.adv_weight * (D_ad_loss_GB + D_ad_cam_loss_GB + D_ad_loss_LB + D_ad_cam_loss_LB)
 
-        loss_D = self.loss_D_A + self.loss_D_B
-        loss_D.backward()
+        self.loss_D = loss_D_A + loss_D_B
+        self.loss_D.backward()
         self.optimizer_D.step()
 
         # Update G
@@ -174,61 +179,74 @@ class UGATITModel(BaseModel):
         G_ad_loss_LB = self.MSE_loss(fake_LB_logit, torch.ones_like(fake_LB_logit).to(self.device))
         G_ad_cam_loss_LB = self.MSE_loss(fake_LB_cam_logit, torch.ones_like(fake_LB_cam_logit).to(self.device))
 
-        self.loss_rec_G_A = self.L1_loss(fake_A2B2A, self.real_A)
-        self.loss_rec_G_B = self.L1_loss(fake_B2A2B, self.real_B)
+        loss_rec_G_A = self.L1_loss(fake_A2B2A, self.real_A)
+        loss_rec_G_B = self.L1_loss(fake_B2A2B, self.real_B)
 
-        self.loss_idt_G_A = self.L1_loss(fake_A2A, self.real_A)
-        self.loss_idt_G_B = self.L1_loss(fake_B2B, self.real_B)
+        loss_idt_G_A = self.L1_loss(fake_A2A, self.real_A)
+        loss_idt_G_B = self.L1_loss(fake_B2B, self.real_B)
 
-        self.loss_cam_G_A = self.BCE_loss(fake_B2A_cam_logit,
-                                          torch.ones_like(fake_B2A_cam_logit).to(self.device)) + \
-                            self.BCE_loss(fake_A2A_cam_logit,
-                                          torch.zeros_like(fake_A2A_cam_logit).to(self.device))
+        loss_cam_G_A = self.BCE_loss(fake_B2A_cam_logit,
+                                     torch.ones_like(fake_B2A_cam_logit).to(self.device)) + \
+                       self.BCE_loss(fake_A2A_cam_logit,
+                                     torch.zeros_like(fake_A2A_cam_logit).to(self.device))
 
-        self.loss_cam_G_B = self.BCE_loss(fake_A2B_cam_logit,
-                                          torch.ones_like(fake_A2B_cam_logit).to(self.device)) + \
-                            self.BCE_loss(fake_B2B_cam_logit,
-                                          torch.zeros_like(fake_B2B_cam_logit).to(self.device))
+        loss_cam_G_B = self.BCE_loss(fake_A2B_cam_logit,
+                                     torch.ones_like(fake_A2B_cam_logit).to(self.device)) + \
+                       self.BCE_loss(fake_B2B_cam_logit,
+                                     torch.zeros_like(fake_B2B_cam_logit).to(self.device))
 
-        self.loss_G_A = self.adv_weight * (G_ad_loss_GA + G_ad_cam_loss_GA + G_ad_loss_LA + G_ad_cam_loss_LA) + \
-                        self.cycle_weight * self.loss_rec_G_A + \
-                        self.identity_weight * self.loss_idt_G_A + \
-                        self.cam_weight * self.loss_cam_G_A
+        loss_G_A = self.adv_weight * (G_ad_loss_GA + G_ad_cam_loss_GA + G_ad_loss_LA + G_ad_cam_loss_LA) + \
+                   self.cycle_weight * loss_rec_G_A + \
+                   self.identity_weight * loss_idt_G_A + \
+                   self.cam_weight * loss_cam_G_A
 
-        self.loss_G_B = self.adv_weight * (G_ad_loss_GB + G_ad_cam_loss_GB + G_ad_loss_LB + G_ad_cam_loss_LB) + \
-                        self.cycle_weight * self.loss_rec_G_B + \
-                        self.identity_weight * self.loss_idt_G_B + \
-                        self.cam_weight * self.loss_cam_G_B
+        loss_G_B = self.adv_weight * (G_ad_loss_GB + G_ad_cam_loss_GB + G_ad_loss_LB + G_ad_cam_loss_LB) + \
+                   self.cycle_weight * loss_rec_G_B + \
+                   self.identity_weight * loss_idt_G_B + \
+                   self.cam_weight * loss_cam_G_B
 
-        loss_G = self.loss_G_A + self.loss_G_B
-        loss_G.backward()
+        self.loss_G = loss_G_A + loss_G_B
+        self.loss_G.backward()
         self.optimizer_G.step()
 
         self.genA2B.apply(self.RhoClipper)
         self.genB2A.apply(self.RhoClipper)
 
-        self.fake_A2A_heatmap = fake_A2A_heatmap
-        self.fake_A2B_heatmap = fake_A2B_heatmap
-        self.fake_A2B2A_heatmap = fake_A2B2A_heatmap
-        self.fake_A2A = fake_A2A
-        self.fake_A2B = fake_A2B
-        self.fake_A2B2A = fake_A2B2A
+        # self.fake_A2A_heatmap = fake_A2A_heatmap
+        # self.fake_A2B_heatmap = fake_A2B_heatmap
+        # self.fake_A2B2A_heatmap = fake_A2B2A_heatmap
+        # self.fake_A2A = fake_A2A
+        # self.fake_A2B = fake_A2B
+        # self.fake_A2B2A = fake_A2B2A
 
+        # transform to numpy [256, 256, 3]
+        self.fake_A2A_heatmap = tensor2im(fake_A2A_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_A2B_heatmap = tensor2im(fake_A2B_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_A2B2A_heatmap = tensor2im(fake_A2B2A_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_A2A = tensor2im(fake_A2A)
+        self.fake_A2B = tensor2im(fake_A2B)
+        self.fake_A2B2A = tensor2im(fake_A2B2A)
 
-        # self.fake_A2A_heatmap = cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size)
-        # self.fake_A2B_heatmap = cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size)
-        # self.fake_A2B2A_heatmap = cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size)
-        # self.fake_A2A = RGB2BGR(tensor2numpy(denorm(fake_A2A[0])))
-        # self.fake_A2B = RGB2BGR(tensor2numpy(denorm(fake_A2B[0])))
-        # self.fake_A2B2A = RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])))
+        self.fake_B2B_heatmap = tensor2im(fake_B2B_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_B2A_heatmap = tensor2im(fake_B2A_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_B2A2B_heatmap = tensor2im(fake_B2A2B_heatmap, use_cam=True, image_size=self.img_size)
+        self.fake_B2B = tensor2im(fake_B2B)
+        self.fake_B2A = tensor2im(fake_B2A)
+        self.fake_B2A2B = tensor2im(fake_B2A2B)
 
         # self.realB
-        self.fake_B2A_heatmap = fake_B2A_heatmap
-        self.fake_B2B_heatmap = fake_B2B_heatmap
-        self.fake_B2A2B_heatmap = fake_B2A2B_heatmap
-        self.fake_B2A = fake_B2A
-        self.fake_B2B = fake_B2B
-        self.fake_B2A2B = fake_B2A2B
+        # self.fake_B2A_heatmap = fake_B2A_heatmap
+        # self.fake_B2B_heatmap = fake_B2B_heatmap
+        # self.fake_B2A2B_heatmap = fake_B2A2B_heatmap
+        # self.fake_B2A = fake_B2A
+        # self.fake_B2B = fake_B2B
+        # self.fake_B2A2B = fake_B2A2B
+
+        # print(self.real_A.size())  # 1, 3, 256 ,256
+        # print(self.fake_A2B.size())
+        # print(self.fake_A2B_heatmap.size())  # 1, 1, 64, 64
+        # print(self.fake_A2B2A.size())
+        # print(self.fake_A2B2A_heatmap.size())
 
     def optimize_parameters(self):
         self.forward()

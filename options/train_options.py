@@ -11,7 +11,7 @@ class TrainOptions(BaseOptions):
         # visdom and HTML visualization parameters
         parser.add_argument('--display_freq', type=int, default=400,
                             help='frequency of showing training results on screen')
-        parser.add_argument('--display_nrow', type=int, default=4,
+        parser.add_argument('--display_nrows', type=int, default=4,
                             help='display all images in a single visdom web panel with images per row.')
         parser.add_argument('--display_id', type=int, default=1, help='window id of the web display, 0 for not display')
         parser.add_argument('--display_server', type=str, default="http://localhost",
@@ -37,11 +37,11 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 
         # training parameters
-        parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs with the initial learning rate')
-        parser.add_argument('--n_epochs_decay', type=int, default=100,
+        parser.add_argument('--n_epochs', type=int, default=500000, help='number of epochs with the initial learning rate')
+        parser.add_argument('--n_epochs_decay', type=int, default=500000,
                             help='number of epochs to linearly decay learning rate to zero')
         parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
-        parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')
+        parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate for adam')
         parser.add_argument('--gan_mode', type=str, default='lsgan',
                             help='the type of GAN objective. [vanilla| lsgan | wgangp]. vanilla GAN loss is the cross-entropy objective used in the original GAN paper.')
         parser.add_argument('--pool_size', type=int, default=50,

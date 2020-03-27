@@ -68,7 +68,7 @@ class Visualizer():
         self.saved = False
         if self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
-            self.ncols = opt.display_ncols
+            self.nrows = opt.display_nrows
             self.vis = visdom.Visdom(server=opt.display_server, port=opt.display_port, env=opt.display_env)
             if not self.vis.check_connection():
                 self.create_visdom_connections()
@@ -104,10 +104,12 @@ class Visualizer():
             save_result (bool) - - if save the current results to an HTML file
         """
         if self.display_id > 0:  # show images in the browser using visdom
-            ncols = self.ncols
-            if ncols > 0:        # show all the images in one visdom panel
-                ncols = min(ncols, len(visuals))
-                h, w = next(iter(visuals.values())).shape[:2]
+            nrows = self.nrows
+            if nrows > 0:        # show all the images in one visdom panel
+                nrows = min(nrows, len(visuals))
+                img = next(iter(visuals.values()))
+                print(img.shape)
+                h, w = img.shape[2:]
                 table_css = """<style>
                         table {border-collapse: separate; border-spacing: 4px; white-space: nowrap; text-align: center}
                         table td {width: % dpx; height: % dpx; padding: 4px; outline: 4px solid black}
@@ -119,22 +121,24 @@ class Visualizer():
                 images = []
                 idx = 0
                 for label, image in visuals.items():
+                    print('image.shape={}'.format(image.shape))
                     image_numpy = util.tensor2im(image)
+                    print('image_numpy.shape = {}'.format(image_numpy.shape))
                     label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
-                    if idx % ncols == 0:
+                    if idx % nrows == 0:
                         label_html += '<tr>%s</tr>' % label_html_row
                         label_html_row = ''
                 white_image = np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
-                while idx % ncols != 0:
+                while idx % nrows != 0:
                     images.append(white_image)
                     label_html_row += '<td></td>'
                     idx += 1
                 if label_html_row != '':
                     label_html += '<tr>%s</tr>' % label_html_row
                 try:
-                    self.vis.images(images, nrow=ncols, win=self.display_id + 1,
+                    self.vis.images(images, nrow=nrows, win=self.display_id + 1,
                                     padding=2, opts=dict(title=title + ' images'))
                     label_html = '<table>%s</table>' % label_html
                     self.vis.text(table_css + label_html, win=self.display_id + 2,

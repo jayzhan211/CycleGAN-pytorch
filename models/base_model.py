@@ -84,16 +84,30 @@ class BaseModel(ABC):
         """
         if self.isTrain:
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
+
         if not self.isTrain or opt.continue_train:
-            load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
-            self.load_networks(load_suffix)
+            if opt.load_iter > 0:
+                model_list = glob(os.path.join(self.save_dir, 'iter_*.pth'))
+                if len(model_list) > 0:
+                    model_list.sort()
+                    start_iter = min(int(model_list[-1].split('_')[-1].split('.')[0]), opt.load_iter)
+                    load_suffix = 'iter_{}'.format(start_iter)
+                    self.load_networks(load_suffix)
+            else:
+                model_list = glob(os.path.join(opt.checkpoints_dir, opt.name, 'epoch_*.pth'))
+                if len(model_list) > 0:
+                    model_list.sort()
+                    start_epoch = min(int(model_list[-1].split('_')[-1].split('.')[0]), opt.load_epoch)
+                    load_suffix = 'epoch_{}'.format(start_epoch)
+                    self.load_networks(load_suffix)
+
         self.print_networks(opt.verbose)
 
     def eval(self):
         """Make models eval mode during test time"""
         for name in self.model_names:
             if isinstance(name, str):
-                net = getattr(self, 'net' + name)
+                net = getattr(self, name)
                 net.eval()
 
     def test(self):
@@ -141,13 +155,13 @@ class BaseModel(ABC):
                 errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
 
-    def save_networks(self, epoch):
+    def save_networks(self, save_suffix):
         """Save all the networks to the disk.
 
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
-        save_path = os.path.join(self.save_dir, 'epoch_{:07d}.pth'.format(epoch))
+        save_path = os.path.join(self.save_dir, '{}.pth'.format(save_suffix))
         params = {}
         for name in self.model_names:
             if isinstance(name, str):
@@ -170,24 +184,19 @@ class BaseModel(ABC):
         else:
             self.__patch_instance_norm_state_dict(state_dict, getattr(module, key), keys, i + 1)
 
-    def load_networks(self, epoch):
+    def load_networks(self, load_suffix):
         """Load all the networks from the disk.
 
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
-
-        model_list = glob(os.path.join(self.save_dir, '*.pth'))
-        if len(model_list) > 0:
-            model_list.sort()
-            iter = min(int(model_list[-1].split('_')[-1].split('.')[0]), epoch)
-            params = torch.load(os.path.join(self.save_dir, 'epoch_{:07d}.pth'.format(iter)))
-            for name in self.model_names:
-                if isinstance(name, str):
-                    net = getattr(self, name)
-                    if isinstance(net, torch.nn.DataParallel):
-                        net = net.module
-                    net.load_state_dict(params[name])
+        params = torch.load(os.path.join(self.save_dir, load_suffix))
+        for name in self.model_names:
+            if isinstance(name, str):
+                net = getattr(self, name)
+                if isinstance(net, torch.nn.DataParallel):
+                    net = net.module
+                net.load_state_dict(params[name])
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
@@ -198,7 +207,7 @@ class BaseModel(ABC):
         print('---------- Networks initialized -------------')
         for name in self.model_names:
             if isinstance(name, str):
-                net = getattr(self, 'net' + name)
+                net = getattr(self, name)
                 num_params = 0
                 for param in net.parameters():
                     num_params += param.numel()

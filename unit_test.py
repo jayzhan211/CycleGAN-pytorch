@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 
 from torch import nn
 
@@ -8,16 +9,14 @@ from models import create_model
 from utils import html
 from utils.visualizer import save_images
 import torch
+import numpy as np
+import cv2
 
 if __name__ == '__main__':
-    h, w = 256, 256
-    x = torch.randn(1, 256, h//4, w//4)
-    print(x.size())
-    gap = torch.nn.functional.adaptive_avg_pool2d(x, 1)
-    print(gap.size())
-    gap_fc = nn.Linear(256, 1, bias=False)
-    gap_logit = gap_fc(gap.view(x.shape[0], -1))
-    print(gap_logit)
+    a = np.random.randn(64, 64, 3)
+    print(a)
+    cam_img = cv2.resize(a, (256, 256)).astype(np.uint8)
+    print(type(cam_img))
 
 
 

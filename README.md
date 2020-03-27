@@ -20,6 +20,13 @@ slightly modified code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://g
 * image preprocess
 `python image_preprocess.py  --data_root ./dataset/rakugakiicon`
 
+## Commands
+
+`nohup python train.py --dataroot ./dataset/cezanne2photo --name cezanne2photo_ugatit --model ugatit --n_epochs 500000 --n_epochs_decay 500000 &`
+
+`python train.py --dataroot ./dataset/cezanne2photo --name cezanne2photo_ugatit --model ugatit --n_epochs 500000 --n_epochs_decay 500000 --light`
+
+
 ### drawing2paint / cyclegan
 
 `python train.py --dataroot ./dataset/draw2paint --name d2p_cyclegan --model cycle_gan`
