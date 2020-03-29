@@ -43,6 +43,11 @@ class BaseModel(ABC):
         self.optimizers = []
         self.image_paths = []
         self.metric = 0  # used for learning rate policy 'plateau'
+        self.epoch_count = 0
+        self.n_epochs = opt.n_epochs
+        self.n_epochs_decay = opt.n_epochs_decay
+
+
 
     @staticmethod
     def modify_commandline_options(parser, is_train):
@@ -98,8 +103,10 @@ class BaseModel(ABC):
                 if len(model_list) > 0:
                     model_list.sort()
                     start_epoch = min(int(model_list[-1].split('_')[-1].split('.')[0]), opt.load_epoch)
-                    load_suffix = 'epoch_{}'.format(start_epoch)
+                    load_suffix = 'epoch_{}.pth'.format(start_epoch)
                     self.load_networks(load_suffix)
+
+                    self.epoch_count = start_epoch + 1
 
         self.print_networks(opt.verbose)
 

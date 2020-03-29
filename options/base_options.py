@@ -69,7 +69,7 @@ class BaseOptions():
                             help='display window size for both visdom and HTML')
 
         # additional parameters
-        parser.add_argument('--load_epoch', type=str, default='inf',
+        parser.add_argument('--load_epoch', type=int, default=float("inf"),
                             help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument('--load_iter', type=int, default='0',
                             help='which iteration to load?')
