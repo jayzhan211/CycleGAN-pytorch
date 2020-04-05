@@ -44,8 +44,10 @@ class BaseModel(ABC):
         self.image_paths = []
         self.metric = 0  # used for learning rate policy 'plateau'
         self.epoch_count = 0
-        self.n_epochs = opt.n_epochs
-        self.n_epochs_decay = opt.n_epochs_decay
+
+        if self.isTrain:
+            self.n_epochs = opt.n_epochs
+            self.n_epochs_decay = opt.n_epochs_decay
 
 
 
@@ -103,9 +105,9 @@ class BaseModel(ABC):
                 if len(model_list) > 0:
                     model_list.sort()
                     start_epoch = min(int(model_list[-1].split('_')[-1].split('.')[0]), opt.load_epoch)
-                    load_suffix = 'epoch_{}.pth'.format(start_epoch)
+                    load_suffix = 'epoch_{:03d}.pth'.format(start_epoch)
+                    print('Loading [{}]'.format(load_suffix))
                     self.load_networks(load_suffix)
-
                     self.epoch_count = start_epoch + 1
 
         self.print_networks(opt.verbose)
@@ -173,6 +175,8 @@ class BaseModel(ABC):
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, name)
+                if isinstance(net, torch.nn.DataParallel):
+                    net = net.module
                 params[name] = net.state_dict()
 
         torch.save(params, save_path)
@@ -198,7 +202,11 @@ class BaseModel(ABC):
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
         params = torch.load(os.path.join(self.save_dir, load_suffix))
+
+        # print(params['netG_A'])
+
         for name in self.model_names:
+            print('name:{}'.format(name))
             if isinstance(name, str):
                 net = getattr(self, name)
                 if isinstance(net, torch.nn.DataParallel):

@@ -108,7 +108,6 @@ class Visualizer():
             if nrows > 0:        # show all the images in one visdom panel
                 nrows = min(nrows, len(visuals))
                 img = next(iter(visuals.values()))
-                print(img.shape)
                 h, w = img.shape[2:]
                 table_css = """<style>
                         table {border-collapse: separate; border-spacing: 4px; white-space: nowrap; text-align: center}
@@ -121,9 +120,7 @@ class Visualizer():
                 images = []
                 idx = 0
                 for label, image in visuals.items():
-                    print('image.shape={}'.format(image.shape))
                     image_numpy = util.tensor2im(image)
-                    print('image_numpy.shape = {}'.format(image_numpy.shape))
                     label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
@@ -166,7 +163,7 @@ class Visualizer():
                 util.save_image(image_numpy, img_path)
 
             # update website
-            webpage = html.HTML(self.web_dir, 'Experiment name = %s' % self.name, refresh=1)
+            webpage = html.HTML(self.web_dir, 'Experiment name = %s' % self.name, refresh=0 )
             for n in range(epoch, 0, -1):
                 webpage.add_header('epoch [%d]' % n)
                 ims, txts, links = [], [], []
