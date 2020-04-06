@@ -34,7 +34,7 @@ class EqualLinear(nn.Module):
     def forward(self, input):
         if self.activation:
             out = F.linear(input, self.weight * self.scale)
-            out = fused_leaky_relu(out, self.bias * self.lr_mul)
+            out = F.leaky_relu(out, self.bias * self.lr_mul)
 
         else:
             out = F.linear(
@@ -451,229 +451,6 @@ class ResnetBlock(nn.Module):
         return out
 
 
-class UpSkipAdaINBlock(nn.Module):
-    def __init__(self, num_features):
-        super(UpSkipAdaINBlock, self).__init__()
-
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.pad1 = nn.ReflectionPad2d(1)
-        self.pad2 = nn.ReflectionPad2d(1)
-        self.conv1 = nn.Conv2d(num_features, num_features, kernel_size=3, stride=1, padding=0, bias=False)
-        self.conv2 = nn.Conv2d(num_features, num_features, kernel_size=3, stride=1, padding=0, bias=False)
-        self.norm1 = AdaIN(num_features)
-        self.norm2 = AdaIN(num_features)
-        self.relu1 = nn.ReLU(True)
-
-        self.pad =  nn.ReflectionPad2d(1)
-        self.conv = nn.Conv2d(num_features + num_features // 2, num_features // 2, kernel_size=3, stride=1, padding=0, bias=False)
-
-        self.norm = nn.InstanceNorm2d(num_features // 2)
-        self.relu = nn.ReLU(True)
-
-    def forward(self, x, gamma, beta, skip):
-        x = self.pad1(x)
-        x = self.conv1(x)
-        x = self.norm1(x, gamma, beta)
-        x = self.relu1(x)
-        x = self.pad2(x)
-        x = self.conv2(x)
-        x = self.norm2(x, gamma, beta)
-
-        # x = self.upsample(x) + skip
-        x = torch.cat([self.upsample(x), skip], 1)
-        x = self.pad(x)
-        x = self.conv(x)
-        x = self.norm(x)
-        x = self.relu(x)
-
-        return x
-
-
-class UStyleGenerator(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=64):
-        super(UStyleGenerator, self).__init__()
-
-        # h,w,3 -> h,w,64
-        downblock1 = [
-            nn.ReflectionPad2d(3),
-            nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=False),
-            nn.InstanceNorm2d(ngf),
-            nn.ReLU(inplace=True),
-        ]
-
-        # h,w,64, h/2,w/2,128
-        downblock2 = [
-
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(ngf, ngf * 2, kernel_size=3, stride=2, padding=0, bias=False),
-            nn.InstanceNorm2d(ngf * 2),
-            nn.ReLU(inplace=True),
-        ]
-        # h/2,w/2,128 => h/4,w/4,256
-        downblock3 = [
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(ngf * 2, ngf * 4, kernel_size=3, stride=2, padding=0, bias=False),
-            nn.InstanceNorm2d(ngf * 4),
-            nn.ReLU(inplace=True),
-        ]
-        # h/4,w/4,256 => h/8,w/8,512
-        downblock4 = [
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(ngf * 4, ngf * 8, kernel_size=3, stride=2, padding=0, bias=False),
-            nn.InstanceNorm2d(ngf * 8),
-            nn.ReLU(inplace=True),
-        ]
-        # h/8,w/8,512 => h/16,w/16,1024
-        downblock5 = [
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(ngf * 8, ngf * 16, kernel_size=3, stride=2, padding=0, bias=False),
-            nn.InstanceNorm2d(ngf * 16),
-            nn.ReLU(inplace=True),
-        ]
-
-        self.downblock1 = nn.Sequential(*downblock1)
-        self.downblock2 = nn.Sequential(*downblock2)
-        self.downblock3 = nn.Sequential(*downblock3)
-        self.downblock4 = nn.Sequential(*downblock4)
-        self.downblock5 = nn.Sequential(*downblock5)
-
-        # self.gap_fc_5 = nn.Linear(ngf * 16, 1, bias=False)
-        # self.gap_fc_4 = nn.Linear(ngf * 8, 1, bias=False)
-        # self.gap_fc_3 = nn.Linear(ngf * 4, 1, bias=False)
-        # self.gap_fc_2 = nn.Linear(ngf * 2, 1, bias=False)
-        #
-        # self.gmp_fc_5 = nn.Linear(ngf * 16, 1, bias=False)
-        # self.gmp_fc_4 = nn.Linear(ngf * 8, 1, bias=False)
-        # self.gmp_fc_3 = nn.Linear(ngf * 4, 1, bias=False)
-        # self.gmp_fc_2 = nn.Linear(ngf * 2, 1, bias=False)
-
-        self.relu = nn.ReLU(True)
-
-        for i in range(5, 1, -1):
-            setattr(self, 'gap_fc_{}'.format(i), nn.Linear(ngf * 2 ** (i - 1), 1, bias=False))
-            setattr(self, 'gmp_fc_{}'.format(i), nn.Linear(ngf * 2 ** (i - 1), 1, bias=False))
-
-            setattr(self, 'conv1x1_{}'.format(i), nn.Conv2d(ngf * 2 ** i, ngf * 2 ** (i - 1), kernel_size=1, stride=1, bias=True))
-            setattr(self, 'fc{}'.format(i),
-                    nn.Sequential(nn.Linear(ngf * 2 ** (i - 1), ngf * 2 ** (i - 1)), nn.ReLU(True)))
-            setattr(self, 'gamma{}'.format(i), nn.Linear(ngf * 2 ** (i - 1), ngf * 2 ** (i - 1)))
-            setattr(self, 'beta{}'.format(i), nn.Linear(ngf * 2 ** (i - 1), ngf * 2 ** (i - 1)))
-
-            setattr(self, 'upblock{}'.format(i), UpSkipAdaINBlock(ngf * 2 ** (i - 1)))
-
-        self.upblock = nn.Sequential(
-            nn.ReflectionPad2d(3),
-            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=False),
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        x1 = self.downblock1(x)
-        x2 = self.downblock2(x1)
-        x3 = self.downblock3(x2)
-        x4 = self.downblock4(x3)
-        x5 = self.downblock5(x4)
-
-        # x5-gamp
-        gap = torch.nn.functional.adaptive_avg_pool2d(x5, 1)
-        gap_logit = self.gap_fc_5(gap.view(x5.shape[0], -1))
-        gap_weight = list(self.gap_fc_5.parameters())[0]
-        gap = x5 * gap_weight.unsqueeze(2).unsqueeze(3)
-
-        gmp = torch.nn.functional.adaptive_max_pool2d(x5, 1)
-        
-        gmp_logit = self.gmp_fc_5(gmp.view(x5.shape[0], -1))
-        gmp_weight = list(self.gmp_fc_5.parameters())[0]
-        gmp = x5 * gmp_weight.unsqueeze(2).unsqueeze(3)
-
-        cam_logit = torch.cat([gap_logit, gmp_logit], 1)
-        x5 = torch.cat([gap, gmp], 1)
-        x5 = self.relu(self.conv1x1_5(x5))
-        # x5-gamp
-
-        # x4-gamp
-        gap = torch.nn.functional.adaptive_avg_pool2d(x4, 1)
-        gap_logit = self.gap_fc_4(gap.view(x4.shape[0], -1))
-        gap_weight = list(self.gap_fc_4.parameters())[0]
-        gap = x4 * gap_weight.unsqueeze(2).unsqueeze(3)
-
-        gmp = torch.nn.functional.adaptive_max_pool2d(x4, 1)
-
-        gmp_logit = self.gmp_fc_4(gmp.view(x4.shape[0], -1))
-        gmp_weight = list(self.gmp_fc_4.parameters())[0]
-        gmp = x4 * gmp_weight.unsqueeze(2).unsqueeze(3)
-
-        cam_logit += torch.cat([gap_logit, gmp_logit], 1)
-        x4 = torch.cat([gap, gmp], 1)
-        x4 = self.relu(self.conv1x1_4(x4))
-        # x4-gamp
-        
-        # x3-gamp
-        gap = torch.nn.functional.adaptive_avg_pool2d(x3, 1)
-        gap_logit = self.gap_fc_3(gap.view(x3.shape[0], -1))
-        gap_weight = list(self.gap_fc_3.parameters())[0]
-        gap = x3 * gap_weight.unsqueeze(2).unsqueeze(3)
-
-        gmp = torch.nn.functional.adaptive_max_pool2d(x3, 1)
-
-        gmp_logit = self.gmp_fc_3(gmp.view(x3.shape[0], -1))
-        gmp_weight = list(self.gmp_fc_3.parameters())[0]
-        gmp = x3 * gmp_weight.unsqueeze(2).unsqueeze(3)
-
-        cam_logit += torch.cat([gap_logit, gmp_logit], 1)
-        x3 = torch.cat([gap, gmp], 1)
-        x3 = self.relu(self.conv1x1_3(x3))
-        # x3-gamp
-        
-        # x2-gamp
-        gap = torch.nn.functional.adaptive_avg_pool2d(x2, 1)
-        gap_logit = self.gap_fc_2(gap.view(x2.shape[0], -1))
-        gap_weight = list(self.gap_fc_2.parameters())[0]
-        gap = x2 * gap_weight.unsqueeze(2).unsqueeze(2)
-
-        gmp = torch.nn.functional.adaptive_max_pool2d(x2, 1)
-
-        gmp_logit = self.gmp_fc_2(gmp.view(x2.shape[0], -1))
-        gmp_weight = list(self.gmp_fc_2.parameters())[0]
-        gmp = x2 * gmp_weight.unsqueeze(2).unsqueeze(2)
-
-        cam_logit += torch.cat([gap_logit, gmp_logit], 1)
-        x2 = torch.cat([gap, gmp], 1)
-        x2 = self.relu(self.conv1x1_2(x2))
-        # x2-gamp
-
-
-        # up5
-        x5_ = torch.nn.functional.adaptive_avg_pool2d(x5, 1)
-        x5_ = self.fc5(x5_.view(x5_.size(0), -1))
-        gamma, beta = self.gamma5(x5_), self.beta5(x5_)
-        x4 = self.upblock5(x5, gamma, beta, x4)
-        # up5
-        
-        # up4
-        x4_ = torch.nn.functional.adaptive_avg_pool2d(x4, 1)
-        x4_ = self.fc4(x4_.view(x4_.size(0), -1))
-        gamma, beta = self.gamma4(x4_), self.beta4(x4_)
-        x3 = self.upblock4(x4, gamma, beta, x3)
-        # up4
-
-        # up3
-        x3_ = torch.nn.functional.adaptive_avg_pool2d(x3, 1)
-        x3_ = self.fc3(x3_.view(x3_.size(0), -1))
-        gamma, beta = self.gamma3(x3_), self.beta3(x3_)
-        x2 = self.upblock3(x3, gamma, beta, x2)
-        # up3
-        
-        # up2
-        x2_ = torch.nn.functional.adaptive_avg_pool2d(x2, 1)
-        x2_ = self.fc2(x2_.view(x2_.size(0), -1))
-        gamma, beta = self.gamma2(x2_), self.beta2(x2_)
-        x1 = self.upblock2(x2, gamma, beta, x1)
-        # up2
-
-        out = self.upblock(x1)
-        return out, cam_logit
-
 class UnetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
@@ -708,64 +485,6 @@ class UnetGenerator(nn.Module):
     def forward(self, input):
         """Standard forward"""
         return self.model(input)
-
-
-# class UStyleBlock(nn.Module):
-#     def __init__(self, outer_nc, inner_nc, input_nc=None, submodule=None, outermost=False, innermost=False,
-#                  use_dropout=False):
-#         super(UStyleBlock, self).__init__()
-#         self.outermost = outermost
-#         if input_nc is None:
-#             input_nc = outer_nc
-#
-#         down_conv = nn.Conv2d(input_nc, inner_nc, kernel_size=4, stride=2, padding=1, bias=True)
-#         down_relu = nn.LeakyReLU(0.2, inplace=True)
-#         down_norm = nn.InstanceNorm2d(inner_nc)
-#
-#         # up_conv = nn.ConvTranspose2d(inner_nc, outer_nc)
-#         up_relu = nn.ReLU(inplace=True)
-#         up_norm = AdaIN(outer_nc)
-#
-#         if outermost:
-#             up_conv = nn.ConvTranspose2d(inner_nc * 2, outer_nc, kernel_size=4, stride=2, padding=1, bias=True)
-#
-#         if outermost:
-#             up_conv = nn.ConvTranspose2d(inner_nc * 2, outer_nc, kernel_size=4, stride=2, padding=1, bias=True)
-#             model = [down_conv] + [submodule] + [up_relu, up_conv, nn.Tanh()]
-#
-#         elif innermost:
-#             up_conv = nn.ConvTranspose2d(inner_nc, outer_nc, kernel_size=4, stride=2, padding=1, bias=True)
-#             # model = [down_relu, down_conv] + [up_relu, up_conv, up_norm]
-#             # model = [down_relu, down_conv, down_norm] + [up_relu, up_conv, up_norm]
-#
-#             model = [down_relu, down_conv] + [up_relu, up_conv]
-#
-#         else:
-#             up_conv = nn.ConvTranspose2d(inner_nc * 2, outer_nc, kernel_size=4, stride=2, padding=1, bias=True)
-#
-#             model = [down_relu, down_conv, down_norm] + [submodule] + [up_relu, up_conv]
-#
-#             # if use_dropout:
-#             #     model += [nn.Dropout(0.2)]
-#
-#         self.model = nn.Sequential(*model)
-#         self.use_dropout = use_dropout
-#         self.dropout = nn.Dropout(0.2)
-#
-#     def forward(self, x, gamma, beta):
-#         if self.outermost:
-#             return self.model(x)
-#         else:  # add skip connections
-#
-#             residual = x
-#             x = self.model(x)
-#             x = self.upnorm(x, gamma, beta)
-#             if self.use_dropout:
-#                 x = self.dropout(x)
-#
-#             residual = self.upnorm(residual, gamma, beta)
-#
-#             return torch.cat([residual, x], 1)
 
 
 class UnetSkipConnectionBlock(nn.Module):
@@ -936,18 +655,16 @@ class ResnetBlockUGATIT(nn.Module):
         return out
 
 
-class AdaIN(nn.Module):
-    def __init__(self, num_features, eps=1e-5):
-        super(AdaIN, self).__init__()
+class AdaIn(nn.Module):
+    def __init__(self, eps=1e-5):
+        super(AdaIn, self).__init__()
         self.eps = eps
 
-    def forward(self, x, gamma, beta):
-        in_mean, in_var = torch.mean(x, dim=[2, 3], keepdim=True), torch.var(x, dim=[2, 3], keepdim=True)
-        out_in = (x - in_mean) / torch.sqrt(in_var + self.eps)
-        out = out_in * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(
-            2).unsqueeze(3)
+    def forward(self, input, gamma, beta):
+        in_mean, in_var = torch.mean(input, dim=[2, 3], keepdim=True), torch.var(input, dim=[2, 3], keepdim=True)
+        out_in = (input - in_mean) / torch.sqrt(in_var + self.eps)
+        out = out_in * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
         return out
-
 
 class adaILN(nn.Module):
     def __init__(self, num_features, eps=1e-5):
@@ -1673,3 +1390,55 @@ class G_stylegan2(nn.Module):
             layers.append(
 
             )
+
+
+class EqualConv2d(nn.Module):
+    def __init__(self, input_nc, output_nc, kernel_size, stride=1, padding=0, bias=True):
+        super(EqualConv2d, self).__init__()
+
+        self.weight = nn.Parameter(torch.randn(output_nc, input_nc, kernel_size, kernel_size))
+        self.scale = 1 / math.sqrt(input_nc * kernel_size * kernel_size)
+
+        self.stride = stride
+        self.padding = padding
+
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(output_nc))
+        else:
+            self.bias = None
+
+    def forward(self, input):
+        out = F.conv2d(input, self.weight * self.scale, self.bias, self.stride, self.padding)
+        return out
+
+
+class Conv2DLayer(nn.Sequential):
+    def __init__(self, input_nc, output_nc, kernel_size, downsample=False, blur_kernel=[1, 3, 3, 1], bias=True,
+                 activate=True):
+        super(Conv2DLayer, self).__init__()
+        layers = []
+
+        stride = 1
+        padding = kernel_size // 2
+
+
+        layers.append(
+            EqualConv2d(
+                input_nc,
+                output_nc,
+                kernel_size,
+                padding=padding,
+                stride=stride,
+                bias=bias and not activate,
+            )
+        )
+
+        if activate:
+            layers.append(nn.LeakyReLU(0.2))
+            # if bias:
+            #     layers.append(FusedLeakyReLU(out_channel))
+            #
+            # else:
+            #     layers.append(ScaledLeakyReLU(0.2))
+
+        super(Conv2DLayer, self).__init__(*layers)

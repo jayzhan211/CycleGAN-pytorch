@@ -3,6 +3,7 @@ from PIL import Image
 from torchvision.datasets.folder import is_image_file
 from torchvision.utils import save_image
 import os
+import argparse
 
 
 def make_resize_dataset(_dir, _transform, new_dir_pth):
@@ -22,26 +23,22 @@ def make_resize_dataset(_dir, _transform, new_dir_pth):
 
 
 if __name__ == '__main__':
-    datasetname = 'draw2paint'
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, required=True, help='name of dataset')
+    args = parser.parse_args()
+
+    datasetname = args.dataset
     Image.MAX_IMAGE_PIXELS = 987654321
     transform_list = [transforms.Resize((256, 256)), transforms.ToTensor()]
     transform = transforms.Compose(transform_list)
     dataroot = "dataset/{}".format(datasetname)
-    dirA = os.path.join(dataroot, 'trainA')
-    dirPth = "dataset/{}-256x/trainA".format(datasetname)
-    make_resize_dataset(dirA, transform, dirPth)
 
-    dirB = os.path.join(dataroot, 'trainB')
-    dirPth = r"dataset/{}-256x/trainB".format(datasetname)
-    make_resize_dataset(dirB, transform, dirPth)
-
-    # dirA = os.path.join(dataroot, 'testA')
-    # dirPth = r"dataset/art2photo-256x/testA"
-    # make_resize_dataset(dirA, transform, dirPth)
-
-    # dirB = os.path.join(dataroot, 'testB')
-    # dirPth = r"dataset/art2photo-256x/testB"
-    # make_resize_dataset(dirB, transform, dirPth)
+    for dir in ['trainA', 'trainB', 'testA', 'testB']:
+        dirPth = os.path.join(dataroot, dir)
+        if os.path.exists(dirPth):
+            newDirPth = "dataset/{}-256x/{}".format(datasetname, dir)
+            make_resize_dataset(dirPth, transform, newDirPth)
 
     print("END")
 
