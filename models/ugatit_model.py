@@ -18,20 +18,21 @@ class UGATITModel(BaseModel):
         parser.set_defaults(no_dropout=True)
         parser.set_defaults(use_cam=True)
         parser.set_defaults(display_nrows=7)
+        parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
+        parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
+        parser.add_argument('--img_size', type=int, default=256, help='size of image')
+        parser.add_argument('--light', action='store_true', help='use light mode')
         if is_train:
             parser.add_argument('--adv_weight', type=float, default=1.0, help='weight for adversarial loss')
             parser.add_argument('--cycle_weight', type=float, default=10.0, help='weight for cycle loss')
             parser.add_argument('--identity_weight', type=float, default=10.0, help='weight for identity loss')
             parser.add_argument('--cam_weight', type=float, default=1000.0, help='weight for class activate map loss')
-            parser.add_argument('--img_size', type=int, default=256, help='size of image')
-            parser.add_argument('--light', action='store_true', help='use light mode')
-            parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
-            parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
             parser.add_argument('--weight_decay', type=float, default=0.0001, help='the weight decay in adam optimizer')
         return parser
 
     def __init__(self, opt):
         super(UGATITModel, self).__init__(opt)
+
         self.loss_names = [
             'G', 'D',
             # 'G_A',
@@ -65,42 +66,43 @@ class UGATITModel(BaseModel):
         self.genB2A = ResnetGeneratorUGATIT(input_nc=opt.output_nc, output_nc=opt.input_nc, ngf=opt.ngf,
                                             n_blocks=opt.n_res, img_size=opt.img_size, light=opt.light).to(self.device)
 
-        # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
-        # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
-        self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-        self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-        self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
-        self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+        if self.isTrain:
+            # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+            # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
+            self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+            self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
 
-        """ Define Loss """
-        self.L1_loss = nn.L1Loss().to(self.device)
-        self.MSE_loss = nn.MSELoss().to(self.device)
-        self.BCE_loss = nn.BCEWithLogitsLoss().to(self.device)
+            """ Define Loss """
+            self.L1_loss = nn.L1Loss().to(self.device)
+            self.MSE_loss = nn.MSELoss().to(self.device)
+            self.BCE_loss = nn.BCEWithLogitsLoss().to(self.device)
 
-        """ Trainer """
-        self.optimizer_G = torch.optim.Adam(
-            itertools.chain(self.genA2B.parameters(), self.genB2A.parameters()),
-            lr=opt.lr,
-            betas=(opt.beta1, 0.999),
-            weight_decay=opt.weight_decay)
+            """ Trainer """
+            self.optimizer_G = torch.optim.Adam(
+                itertools.chain(self.genA2B.parameters(), self.genB2A.parameters()),
+                lr=opt.lr,
+                betas=(opt.beta1, 0.999),
+                weight_decay=opt.weight_decay)
 
-        self.optimizer_D = torch.optim.Adam(
-            itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
-                            self.disLA.parameters(), self.disLB.parameters()),
-            # itertools.chain(self.disA.parameters(), self.disB.parameters()),
-            lr=opt.lr,
-            betas=(opt.beta1, 0.999),
-            weight_decay=opt.weight_decay)
+            self.optimizer_D = torch.optim.Adam(
+                itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
+                                self.disLA.parameters(), self.disLB.parameters()),
+                # itertools.chain(self.disA.parameters(), self.disB.parameters()),
+                lr=opt.lr,
+                betas=(opt.beta1, 0.999),
+                weight_decay=opt.weight_decay)
 
-        self.optimizers.append(self.optimizer_G)
-        self.optimizers.append(self.optimizer_D)
-        self.RhoClipper = RhoClipper(0, 1)
+            self.optimizers.append(self.optimizer_G)
+            self.optimizers.append(self.optimizer_D)
+            self.RhoClipper = RhoClipper(0, 1)
 
-        """ Weight """
-        self.adv_weight = opt.adv_weight
-        self.cycle_weight = opt.cycle_weight
-        self.identity_weight = opt.identity_weight
-        self.cam_weight = opt.cam_weight
+            """ Weight """
+            self.adv_weight = opt.adv_weight
+            self.cycle_weight = opt.cycle_weight
+            self.identity_weight = opt.identity_weight
+            self.cam_weight = opt.cam_weight
 
         self.img_size = opt.img_size
 
@@ -110,8 +112,33 @@ class UGATITModel(BaseModel):
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
-    def forward(self):
+    def test(self):
 
+        with torch.no_grad():
+            fake_A2B, _, fake_A2B_heatmap = self.genA2B(self.real_A)
+            fake_B2A, _, fake_B2A_heatmap = self.genB2A(self.real_B)
+
+            fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B)
+            fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A)
+
+            fake_A2A, _, fake_A2A_heatmap = self.genB2A(self.real_A)
+            fake_B2B, _, fake_B2B_heatmap = self.genA2B(self.real_B)
+
+            self.fake_A2A_heatmap = tensor2im(fake_A2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2B_heatmap = tensor2im(fake_A2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2B2A_heatmap = tensor2im(fake_A2B2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
+
+            self.fake_B2B_heatmap = tensor2im(fake_B2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2A_heatmap = tensor2im(fake_B2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2A2B_heatmap = tensor2im(fake_B2A2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
+
+    def train(self, display):
         # Update D
         self.optimizer_D.zero_grad()
 
@@ -220,19 +247,22 @@ class UGATITModel(BaseModel):
         # self.fake_A2B2A = fake_A2B2A
 
         # transform to numpy [256, 256, 3]
-        self.fake_A2A_heatmap = tensor2im(fake_A2A_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_A2B_heatmap = tensor2im(fake_A2B_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_A2B2A_heatmap = tensor2im(fake_A2B2A_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_A2A = tensor2im(fake_A2A)
-        self.fake_A2B = tensor2im(fake_A2B)
-        self.fake_A2B2A = tensor2im(fake_A2B2A)
 
-        self.fake_B2B_heatmap = tensor2im(fake_B2B_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_B2A_heatmap = tensor2im(fake_B2A_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_B2A2B_heatmap = tensor2im(fake_B2A2B_heatmap, use_cam=True, image_size=self.img_size)
-        self.fake_B2B = tensor2im(fake_B2B)
-        self.fake_B2A = tensor2im(fake_B2A)
-        self.fake_B2A2B = tensor2im(fake_B2A2B)
+        if display:
+
+            self.fake_A2A_heatmap = tensor2im(fake_A2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2B_heatmap = tensor2im(fake_A2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2B2A_heatmap = tensor2im(fake_A2B2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
+
+            self.fake_B2B_heatmap = tensor2im(fake_B2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2A_heatmap = tensor2im(fake_B2A_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2A2B_heatmap = tensor2im(fake_B2A2B_heatmap, use_cam=True, image_size=self.img_size)
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
 
         # self.realB
         # self.fake_B2A_heatmap = fake_B2A_heatmap
@@ -248,5 +278,3 @@ class UGATITModel(BaseModel):
         # print(self.fake_A2B2A.size())
         # print(self.fake_A2B2A_heatmap.size())
 
-    def optimize_parameters(self):
-        self.forward()

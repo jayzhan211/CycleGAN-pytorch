@@ -33,7 +33,8 @@ class BaseModel(ABC):
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
-        self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
+        self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device(
+            'cpu')  # get device name: CPU or GPU
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)  # save all the checkpoints to save_dir
         if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
             torch.backends.cudnn.benchmark = True
@@ -48,8 +49,6 @@ class BaseModel(ABC):
         if self.isTrain:
             self.n_epochs = opt.n_epochs
             self.n_epochs_decay = opt.n_epochs_decay
-
-
 
     @staticmethod
     def modify_commandline_options(parser, is_train):
@@ -73,15 +72,19 @@ class BaseModel(ABC):
         """
         pass
 
-    @abstractmethod
-    def forward(self):
-        """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        pass
+    # @abstractmethod
+    # def forward(self):
+    #     """Run forward pass; called by both functions <optimize_parameters> and <test>."""
+    #     pass
 
     @abstractmethod
-    def optimize_parameters(self):
-        """Calculate losses, gradients, and update network weights; called in every training iteration"""
+    def train(self, display):
         pass
+
+    # @abstractmethod
+    # def optimize_parameters(self):
+    #     """Calculate losses, gradients, and update network weights; called in every training iteration"""
+    #     pass
 
     def setup(self, opt):
         """Load and print networks; create schedulers
@@ -106,6 +109,7 @@ class BaseModel(ABC):
                     model_list.sort()
                     start_epoch = min(int(model_list[-1].split('_')[-1].split('.')[0]), opt.load_epoch)
                     load_suffix = 'epoch_{:03d}.pth'.format(start_epoch)
+
                     print('Loading [{}]'.format(load_suffix))
                     self.load_networks(load_suffix)
                     self.epoch_count = start_epoch + 1
@@ -119,15 +123,9 @@ class BaseModel(ABC):
                 net = getattr(self, name)
                 net.eval()
 
+    @abstractmethod
     def test(self):
-        """Forward function used in test time.
-
-        This function wraps <forward> function in no_grad() so we don't save intermediate steps for backprop
-        It also calls <compute_visuals> to produce additional visualization results
-        """
-        with torch.no_grad():
-            self.forward()
-            self.compute_visuals()
+        pass
 
     def compute_visuals(self):
         """Calculate additional output images for visdom and HTML visualization"""
@@ -161,7 +159,8 @@ class BaseModel(ABC):
         errors_ret = OrderedDict()
         for name in self.loss_names:
             if isinstance(name, str):
-                errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
+                errors_ret[name] = float(
+                    getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
 
     def save_networks(self, save_suffix):
@@ -190,7 +189,7 @@ class BaseModel(ABC):
                 if getattr(module, key) is None:
                     state_dict.pop('.'.join(keys))
             if module.__class__.__name__.startswith('InstanceNorm') and \
-               (key == 'num_batches_tracked'):
+                    (key == 'num_batches_tracked'):
                 state_dict.pop('.'.join(keys))
         else:
             self.__patch_instance_norm_state_dict(state_dict, getattr(module, key), keys, i + 1)
@@ -203,10 +202,7 @@ class BaseModel(ABC):
         """
         params = torch.load(os.path.join(self.save_dir, load_suffix))
 
-        # print(params['netG_A'])
-
         for name in self.model_names:
-            print('name:{}'.format(name))
             if isinstance(name, str):
                 net = getattr(self, name)
                 if isinstance(net, torch.nn.DataParallel):

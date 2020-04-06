@@ -56,41 +56,43 @@ class UStyleModel(BaseModel):
         self.genA2B = UStyleGenerator(opt.input_nc, opt.output_nc, opt.ngf).to(self.device)
         self.genB2A = UStyleGenerator(opt.output_nc, opt.input_nc, opt.ngf).to(self.device)
 
-        # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
-        # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
-        self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-        self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-        self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
-        self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+        if self.isTrain:
 
-        """ Define Loss """
-        self.L1_loss = nn.L1Loss().to(self.device)
-        self.MSE_loss = nn.MSELoss().to(self.device)
-        self.BCE_loss = nn.BCEWithLogitsLoss().to(self.device)
+            # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+            # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
+            self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+            self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
 
-        """ Trainer """
-        self.optimizer_G = torch.optim.Adam(
-            itertools.chain(self.genA2B.parameters(), self.genB2A.parameters()),
-            lr=opt.lr,
-            betas=(opt.beta1, 0.999),
-            weight_decay=opt.weight_decay)
+            """ Define Loss """
+            self.L1_loss = nn.L1Loss().to(self.device)
+            self.MSE_loss = nn.MSELoss().to(self.device)
+            self.BCE_loss = nn.BCEWithLogitsLoss().to(self.device)
 
-        self.optimizer_D = torch.optim.Adam(
-            itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
-                            self.disLA.parameters(), self.disLB.parameters()),
-            # itertools.chain(self.disA.parameters(), self.disB.parameters()),
-            lr=opt.lr,
-            betas=(opt.beta1, 0.999),
-            weight_decay=opt.weight_decay)
+            """ Trainer """
+            self.optimizer_G = torch.optim.Adam(
+                itertools.chain(self.genA2B.parameters(), self.genB2A.parameters()),
+                lr=opt.lr,
+                betas=(opt.beta1, 0.999),
+                weight_decay=opt.weight_decay)
 
-        self.optimizers.append(self.optimizer_G)
-        self.optimizers.append(self.optimizer_D)
+            self.optimizer_D = torch.optim.Adam(
+                itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
+                                self.disLA.parameters(), self.disLB.parameters()),
+                # itertools.chain(self.disA.parameters(), self.disB.parameters()),
+                lr=opt.lr,
+                betas=(opt.beta1, 0.999),
+                weight_decay=opt.weight_decay)
 
-        """ Weight """
-        self.adv_weight = opt.adv_weight
-        self.cycle_weight = opt.cycle_weight
-        self.identity_weight = opt.identity_weight
-        self.cam_weight = opt.cam_weight
+            self.optimizers.append(self.optimizer_G)
+            self.optimizers.append(self.optimizer_D)
+
+            """ Weight """
+            self.adv_weight = opt.adv_weight
+            self.cycle_weight = opt.cycle_weight
+            self.identity_weight = opt.identity_weight
+            self.cam_weight = opt.cam_weight
 
     def set_input(self, input):
         AtoB = self.opt.direction in ['AtoB']
@@ -98,7 +100,26 @@ class UStyleModel(BaseModel):
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
-    def forward(self):
+    def test(self):
+        with torch.no_grad():
+            fake_A2B, fake_A2B_cam_logit = self.genA2B(self.real_A)
+            fake_B2A, fake_B2A_cam_logit = self.genB2A(self.real_B)
+
+            fake_A2B2A, _ = self.genB2A(fake_A2B)
+            fake_B2A2B, _ = self.genA2B(fake_B2A)
+
+            fake_A2A, fake_A2A_cam_logit = self.genB2A(self.real_A)
+            fake_B2B, fake_B2B_cam_logit = self.genA2B(self.real_B)
+
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
+
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
+
+    def train(self, display):
 
         # Update D
         self.optimizer_D.zero_grad()
@@ -197,13 +218,14 @@ class UStyleModel(BaseModel):
         self.loss_G.backward()
         self.optimizer_G.step()
 
-        self.fake_A2A = tensor2im(fake_A2A)
-        self.fake_A2B = tensor2im(fake_A2B)
-        self.fake_A2B2A = tensor2im(fake_A2B2A)
 
-        self.fake_B2B = tensor2im(fake_B2B)
-        self.fake_B2A = tensor2im(fake_B2A)
-        self.fake_B2A2B = tensor2im(fake_B2A2B)
+        if display:
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
 
-    def optimize_parameters(self):
-        self.forward()
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
+
+
