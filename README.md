@@ -1,6 +1,12 @@
 # CycleGAN-pytorch
 code based on [junyanz/pytorch-CycleGAN-and-pix2pix](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)
 
+```commandline
+Ustyle V1 IN, out only, bilinear
+Ustyle V1 ILN, out + x, nearest
+```
+
+
 # TODO
 None
 

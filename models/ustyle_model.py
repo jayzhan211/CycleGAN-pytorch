@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 from utils.util import denorm, tensor2numpy, RGB2BGR, cam, tensor2im
-from models.networks import UStyleGenerator, DiscriminatorUGATIT
+from models.networks import UStyleGenerator, DiscriminatorUGATIT, NICEDiscriminator
 
 
 class UStyleModel(BaseModel):
@@ -18,7 +18,7 @@ class UStyleModel(BaseModel):
             parser.add_argument('--cam_weight', type=float, default=1000.0, help='weight for class activate map loss')
             parser.add_argument('--img_size', type=int, default=256, help='size of image')
             # parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
-            parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
+            parser.add_argument('--n_dis', type=int, default=7, help='The number of discriminator layer')
             parser.add_argument('--weight_decay', type=float, default=0.0001, help='the weight decay in adam optimizer')
         return parser
 
@@ -58,12 +58,12 @@ class UStyleModel(BaseModel):
 
         if self.isTrain:
 
-            # self.disA = DiscriminatorUGATIT(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
-            # self.disB = DiscriminatorUGATIT(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
-            self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-            self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-            self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
-            self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+            self.disA = NICEDiscriminator(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+            self.disB = NICEDiscriminator(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
+            # self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            # self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
+            # self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
+            # self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
 
             """ Define Loss """
             self.L1_loss = nn.L1Loss().to(self.device)
@@ -78,9 +78,9 @@ class UStyleModel(BaseModel):
                 weight_decay=opt.weight_decay)
 
             self.optimizer_D = torch.optim.Adam(
-                itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
-                                self.disLA.parameters(), self.disLB.parameters()),
-                # itertools.chain(self.disA.parameters(), self.disB.parameters()),
+                # itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
+                #                 self.disLA.parameters(), self.disLB.parameters()),
+                itertools.chain(self.disA.parameters(), self.disB.parameters()),
                 lr=opt.lr,
                 betas=(opt.beta1, 0.999),
                 weight_decay=opt.weight_decay)
@@ -165,6 +165,9 @@ class UStyleModel(BaseModel):
         # Update G
 
         self.optimizer_G.zero_grad()
+
+
+
         fake_A2B, fake_A2B_cam_logit = self.genA2B(self.real_A)
         fake_B2A, fake_B2A_cam_logit = self.genB2A(self.real_B)
 

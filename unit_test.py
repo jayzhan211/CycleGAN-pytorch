@@ -14,6 +14,7 @@ import cv2
 from models.networks import UnetGenerator, ResnetGeneratorUGATIT
 
 if __name__ == '__main__':
-    # params = torch.load(os.path.join('./checkpoints/draw2paintV3-256x_unet256_idt10/epoch_000.pth'))
-    params = torch.load(os.path.join('./checkpoints/draw2paintV3-256x_unet256/epoch_200.pth'))
-    print(params.keys())
+    x = torch.randn(1, 4, 2, 2)
+    z = x
+    z = torch.randn(1, 4)
+    print(x.size(), z.size())
