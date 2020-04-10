@@ -14,7 +14,12 @@ import cv2
 from models.networks import UnetGenerator, ResnetGeneratorUGATIT
 
 if __name__ == '__main__':
-    x = torch.randn(1, 4, 2, 2)
-    z = x
-    z = torch.randn(1, 4)
-    print(x.size(), z.size())
+    x  = {
+        'A':3,
+        'B':4
+    }
+
+    y = x['A']
+    print(y)
+    z = x.get('AA', 'BB')
+    print(z)

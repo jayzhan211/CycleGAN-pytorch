@@ -67,6 +67,9 @@ class BaseOptions():
                             help='if specified, do not flip the images for data augmentation')
         parser.add_argument('--display_winsize', type=int, default=256,
                             help='display window size for both visdom and HTML')
+        parser.add_argument('--color_preserve', action='store_true',
+                            help='if specified, make additional color-preserved images')
+
 
         # additional parameters
         parser.add_argument('--load_epoch', type=int, default=float("inf"),

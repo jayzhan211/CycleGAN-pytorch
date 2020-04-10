@@ -110,6 +110,8 @@ class UGATITModel(BaseModel):
         AtoB = self.opt.direction in ['AtoB']
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.real_A_Bcolor = input.get('A_Bcolor' if AtoB else 'B_Acolor', self.real_A if AtoB else self.real_B).to(self.device)
+        self.real_B_Acolor = input.get('B_Acolor' if AtoB else 'A_Bcolor', self.real_B if AtoB else self.real_A).to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def test(self):
@@ -145,10 +147,15 @@ class UGATITModel(BaseModel):
         fake_A2B, _, _ = self.genA2B(self.real_A)
         fake_B2A, _, _ = self.genB2A(self.real_B)
 
-        real_GA_logit, real_GA_cam_logit, _ = self.disGA(self.real_A)
-        real_LA_logit, real_LA_cam_logit, _ = self.disLA(self.real_A)
-        real_GB_logit, real_GB_cam_logit, _ = self.disGB(self.real_B)
-        real_LB_logit, real_LB_cam_logit, _ = self.disLB(self.real_B)
+        # real_GA_logit, real_GA_cam_logit, _ = self.disGA(self.real_A)
+        # real_LA_logit, real_LA_cam_logit, _ = self.disLA(self.real_A)
+        # real_GB_logit, real_GB_cam_logit, _ = self.disGB(self.real_B)
+        # real_LB_logit, real_LB_cam_logit, _ = self.disLB(self.real_B)
+
+        real_GA_logit, real_GA_cam_logit, _ = self.disGA(self.real_A_Bcolor)
+        real_LA_logit, real_LA_cam_logit, _ = self.disLA(self.real_A_Bcolor)
+        real_GB_logit, real_GB_cam_logit, _ = self.disGB(self.real_B_Acolor)
+        real_LB_logit, real_LB_cam_logit, _ = self.disLB(self.real_B_Acolor)
 
         fake_GA_logit, fake_GA_cam_logit, _ = self.disGA(fake_B2A)
         fake_LA_logit, fake_LA_cam_logit, _ = self.disLA(fake_B2A)

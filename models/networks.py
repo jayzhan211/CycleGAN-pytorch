@@ -1574,7 +1574,7 @@ class NICEResnetGenerator(nn.Module):
 
 
 class NICE3SResnetGenerator(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=64, n_blocks=4, img_size=256, light=False):
+    def __init__(self, input_nc, output_nc, ngf=64, n_blocks=4):
         super(NICE3SResnetGenerator, self).__init__()
         # self.input_nc = input_nc
         # self.output_nc = output_nc
@@ -1745,7 +1745,7 @@ class NICE3SResnetGenerator(nn.Module):
 
 
 class NICE3SDiscriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, ):
+    def __init__(self, input_nc, ndf=64):
         super(NICE3SDiscriminator, self).__init__()
         # K4S2 rf = 4
         dis4_10 = [

@@ -136,35 +136,24 @@ def coral(source, target):
     :param self:
     :return:
     """
-
     device = source.device
+    assert len(source.size()) == len(target.size()) == 3
+    assert source.size()[0] == target.size()[0] == 3
 
-    if len(source.size()) == 3:
-        source = source.unsqueeze(0)
-    if len(target.size()) == 3:
-        target = target.unsqueeze(0)
+    source_f, source_f_mean, source_f_std = calc_feat_flatten_mean_std(source)
+    source_f_norm = (source_f - source_f_mean) / source_f_std
+    source_f_cov_eye = torch.mm(source_f_norm, source_f_norm.t()) + torch.eye(3).to(device)
 
-    assert len(source.size()) == len(target.size()) == 4
-    assert source.size()[1] == target.size()[1] == 3
+    target_f, target_f_mean, target_f_std = calc_feat_flatten_mean_std(target)
+    target_f_norm = (target_f - target_f_mean) / target_f_std
+    target_f_cov_eye = torch.mm(target_f_norm, target_f_norm.t()) + torch.eye(3).to(device)
 
-    result = target.clone()
-    b = source.size()[0]
-    for i in range(b):
-        source_f, source_f_mean, source_f_std = calc_feat_flatten_mean_std(source[i])
-        source_f_norm = (source_f - source_f_mean) / source_f_std
-        source_f_cov_eye = torch.mm(source_f_norm, source_f_norm.t()) + torch.eye(3).to(device)
+    source_f_norm_transfer = torch.mm(
+        _mat_sqrt(target_f_cov_eye),
+        torch.mm(torch.inverse(_mat_sqrt(source_f_cov_eye)),
+                 source_f_norm)
+    )
 
-        target_f, target_f_mean, target_f_std = calc_feat_flatten_mean_std(target[i])
-        target_f_norm = (target_f - target_f_mean) / target_f_std
-        target_f_cov_eye = torch.mm(target_f_norm, target_f_norm.t()) + torch.eye(3).to(device)
-
-        source_f_norm_transfer = torch.mm(
-            _mat_sqrt(target_f_cov_eye),
-            torch.mm(torch.inverse(_mat_sqrt(source_f_cov_eye)),
-                     source_f_norm)
-        )
-
-        source_f_transfer = source_f_norm_transfer * target_f_std + target_f_mean
-        result[i] = source_f_transfer.view(source[i].size())
-
+    source_f_transfer = source_f_norm_transfer * target_f_std + target_f_mean
+    result = source_f_transfer.view(source.size())
     return result

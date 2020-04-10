@@ -3,6 +3,7 @@ from PIL import Image
 from data.image_folder import make_dataset
 from .base_dataset import BaseDataset, get_transform
 import os
+from utils.util import coral
 
 
 class UnalignedDataset(BaseDataset):
@@ -30,6 +31,8 @@ class UnalignedDataset(BaseDataset):
         self.transform_A = get_transform(self.opt, grayscale=(input_nc == 1))
         self.transform_B = get_transform(self.opt, grayscale=(output_nc == 1))
 
+        self.color_preserve = opt.color_preserve
+
     def __getitem__(self, index):
         """
         Return a data point and its metadata information.
@@ -50,7 +53,23 @@ class UnalignedDataset(BaseDataset):
 
         A = self.transform_A(A_img)
         B = self.transform_B(B_img)
-        return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
+
+        if self.color_preserve:
+
+            A_Bcolor = coral(A, B)
+            B_Acolor = coral(B, A)
+
+            return {
+                'A': A, 'B': B,
+                'A_Bcolor': A_Bcolor,
+                'B_Acolor': B_Acolor,
+                'A_paths': A_path, 'B_paths': B_path
+            }
+        else:
+            return {
+                'A': A, 'B': B,
+                'A_paths': A_path, 'B_paths': B_path
+            }
 
     def __len__(self):
         return max(self.A_size, self.B_size)
