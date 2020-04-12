@@ -5,6 +5,10 @@ from torchvision.utils import save_image
 import os
 import argparse
 
+def func_format(str):
+    if str in ['jpg', 'png']:
+        return str
+    return 'png'
 
 def make_resize_dataset(_dir, _transform, new_dir_pth):
     assert os.path.isdir(_dir), '{} is not a valid' \
@@ -18,7 +22,7 @@ def make_resize_dataset(_dir, _transform, new_dir_pth):
                 pth = os.path.join(dir_path, file_name)
                 img = Image.open(pth).convert('RGB')
                 trans = _transform(img)
-                save_image(trans, os.path.join(new_dir_pth, '{:05d}.{}'.format(num, file_name.split('.')[-1])))
+                save_image(trans, os.path.join(new_dir_pth, '{:05d}.{}'.format(num, func_format(file_name.split('.')[-1]))))
                 num += 1
 
 

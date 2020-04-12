@@ -8,10 +8,10 @@ from utils.util import denorm, tensor2numpy, RGB2BGR, cam, tensor2im
 from models.networks import NICE3SResnetGenerator, NICE3SDiscriminator
 
 
-class NICEGANModel(BaseModel):
+class NICE3SGANModel(BaseModel):
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
-        parser.set_defaults(display_nrows=5)
+        parser.set_defaults(display_nrows=10)
         parser.add_argument('--light', action='store_true', help='use light mode')
         parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
         # parser.add_argument('--n_dis', type=int, default=7, help='The number of discriminator layer')
@@ -25,7 +25,7 @@ class NICEGANModel(BaseModel):
         return parser
 
     def __init__(self, opt):
-        super(NICEGANModel, self).__init__(opt)
+        super(NICE3SGANModel, self).__init__(opt)
         self.loss_names = [
             'G', 'D',
             # 'G_A',
@@ -40,8 +40,18 @@ class NICEGANModel(BaseModel):
             # 'cam_G_B',
         ]
 
-        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'real_A_heatmap']
-        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'real_B_heatmap']
+        visual_names_A = [
+            'real_A', 'fake_A2B', 'fake_A2B2A', 'fake_A2A',
+            'realA_heatmap10', 'realA_heatmap46', 'realA_heatmap190',
+            'fake_A2B_heatmap10', 'fake_A2B_heatmap46', 'fake_A2B_heatmap190'
+        ]
+
+        visual_names_B = [
+            'real_B', 'fake_B2A', 'fake_B2A2B', 'fake_B2B',
+            'realB_heatmap10', 'realB_heatmap46', 'realB_heatmap190',
+            'fake_B2A_heatmap10', 'fake_B2A_heatmap46', 'fake_B2A_heatmap190'
+        ]
+
         self.visual_names = visual_names_A + visual_names_B
 
         self.model_names = ['genA2B', 'genB2A']
@@ -57,10 +67,6 @@ class NICEGANModel(BaseModel):
 
             self.disA = NICE3SDiscriminator(opt.output_nc, opt.ndf).to(self.device)
             self.disB = NICE3SDiscriminator(opt.input_nc, opt.ndf).to(self.device)
-            # self.disGA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-            # self.disGB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=7).to(self.device)
-            # self.disLA = DiscriminatorUGATIT(input_nc=opt.output_nc, ndf=opt.ndf, n_layers=5).to(self.device)
-            # self.disLB = DiscriminatorUGATIT(input_nc=opt.input_nc, ndf=opt.ndf, n_layers=5).to(self.device)
 
             """ Define Loss """
             self.L1_loss = nn.L1Loss().to(self.device)
@@ -75,8 +81,6 @@ class NICEGANModel(BaseModel):
                 weight_decay=opt.weight_decay)
 
             self.optimizer_D = torch.optim.Adam(
-                # itertools.chain(self.disGA.parameters(), self.disGB.parameters(),
-                #                 self.disLA.parameters(), self.disLB.parameters()),
                 itertools.chain(self.disA.parameters(), self.disB.parameters()),
                 lr=opt.lr,
                 betas=(opt.beta1, 0.999),
@@ -96,130 +100,200 @@ class NICEGANModel(BaseModel):
         AtoB = self.opt.direction in ['AtoB']
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
-        self.real_A_Bcolor = input.get('A_Bcolor' if AtoB else 'B_Acolor', self.real_A if AtoB else self.real_B).to(
-            self.device)
-        self.real_B_Acolor = input.get('B_Acolor' if AtoB else 'A_Bcolor', self.real_B if AtoB else self.real_A).to(
-            self.device)
+        # self.real_A_Bcolor = input.get('A_Bcolor' if AtoB else 'B_Acolor', self.real_A if AtoB else self.real_B).to(
+        #     self.device)
+        # self.real_B_Acolor = input.get('B_Acolor' if AtoB else 'A_Bcolor', self.real_B if AtoB else self.real_A).to(
+        #     self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def test(self):
         with torch.no_grad():
-            # _, _, _, A_heatmap, real_A_z = self.disA(self.real_A)
-            # _, _, _, B_heatmap, real_B_z = self.disB(self.real_B)
-            #
-            # fake_A2B = self.genA2B(real_A_z)
-            # fake_B2A = self.genB2A(real_B_z)
-            #
-            # _, _, _, _, fake_A_z = self.disA(fake_B2A)
-            # _, _, _, _, fake_B_z = self.disB(fake_A2B)
-            #
-            # fake_B2A2B = self.genA2B(fake_A_z)
-            # fake_A2B2A = self.genB2A(fake_B_z)
-            #
-            # fake_A2A = self.genB2A(real_A_z)
-            # fake_B2B = self.genA2B(real_B_z)
-            #
-            # self.real_A_heatmap = tensor2im(A_heatmap, use_cam=True, image_size=self.image_size)
-            # self.fake_A2A = tensor2im(fake_A2A)
-            # self.fake_A2B = tensor2im(fake_A2B)
-            # self.fake_A2B2A = tensor2im(fake_A2B2A)
-            #
-            # self.real_B_heatmap = tensor2im(B_heatmap, use_cam=True, image_size=self.image_size)
-            # self.fake_B2B = tensor2im(fake_B2B)
-            # self.fake_B2A = tensor2im(fake_B2A)
-            # self.fake_B2A2B = tensor2im(fake_B2A2B)
+            _, _, real_A10, real_A46, real_A190, _, _, _, realA_heatmap10, realA_heatmap46, realA_heatmap190 = self.disA(
+                self.real_A)
+
+            _, _, real_B10, real_B46, real_B190, _, _, _, realB_heatmap10, realB_heatmap46, realB_heatmap190 = self.disB(
+                self.real_B)
+
+            fake_A2B = self.genA2B(real_A10, real_A46, real_A190)
+            fake_B2A = self.genB2A(real_B10, real_B46, real_B190)
+
+            fake_LA_logit, fake_GA_logit, fake_A10, fake_A46, fake_A190, fake_A_cam_logit10, fake_A_cam_logit46, fake_A_cam_logit190, fake_B2A_heatmap10, fake_B2A_heatmap46, fake_B2A_heatmap190 = self.disA(
+                fake_B2A)
+            fake_LB_logit, fake_GB_logit, fake_B10, fake_B46, fake_B190, fake_B_cam_logit10, fake_B_cam_logit46, fake_B_cam_logit190, fake_A2B_heatmap10, fake_A2B_heatmap46, fake_A2B_heatmap190 = self.disB(
+                fake_A2B)
+
+            fake_B2A2B = self.genA2B(fake_A10, fake_A46, fake_A190)
+            fake_A2B2A = self.genB2A(fake_B10, fake_B46, fake_B190)
+
+            fake_A2A = self.genB2A(real_A10, real_A46, real_A190)
+            fake_B2B = self.genA2B(real_B10, real_B46, real_B190)
+
+            self.realA_heatmap10 = tensor2im(realA_heatmap10, use_cam=True, image_size=self.image_size)
+            self.realA_heatmap46 = tensor2im(realA_heatmap46, use_cam=True, image_size=self.image_size)
+            self.realA_heatmap190 = tensor2im(realA_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_B2A_heatmap10 = tensor2im(fake_B2A_heatmap10, use_cam=True, image_size=self.image_size)
+            self.fake_B2A_heatmap46 = tensor2im(fake_B2A_heatmap46, use_cam=True, image_size=self.image_size)
+            self.fake_B2A_heatmap190 = tensor2im(fake_B2A_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
+
+            self.realB_heatmap10 = tensor2im(realB_heatmap10, use_cam=True, image_size=self.image_size)
+            self.realB_heatmap46 = tensor2im(realB_heatmap46, use_cam=True, image_size=self.image_size)
+            self.realB_heatmap190 = tensor2im(realB_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_A2B_heatmap10 = tensor2im(fake_A2B_heatmap10, use_cam=True, image_size=self.image_size)
+            self.fake_A2B_heatmap46 = tensor2im(fake_A2B_heatmap46, use_cam=True, image_size=self.image_size)
+            self.fake_A2B_heatmap190 = tensor2im(fake_A2B_heatmap190, use_cam=True, image_size=self.image_size)
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
 
     def train(self, display):
 
         # Update D
         self.optimizer_D.zero_grad()
 
-        # TODO transmit to nice3s code
+        # cls70, cls286, x10, x46, x190, cam_logit_10, cam_logit_46, cam_logit_190, heatmap10x, heatmap46x, heatmap190x
+        real_LA_logit, real_GA_logit, real_A10, real_A46, real_A190, real_A_cam_logit10, real_A_cam_logit46, real_A_cam_logit190, Aheatmap10, Aheatmap46, Aheatmap190 = self.disA(
+            self.real_A)
+        real_LB_logit, real_GB_logit, real_B10, real_B46, real_B190, real_B_cam_logit10, real_B_cam_logit46, real_B_cam_logit190, Bheatmap10, Bheatmap46, Bheatmap190 = self.disB(
+            self.real_B)
 
-        # real_LA_logit, real_GA_logit, real_A_cam_logit, _, real_A_z = self.disA(self.real_A)
-        # real_LB_logit, real_GB_logit, real_B_cam_logit, _, real_B_z = self.disB(self.real_B)
-        #
-        # fake_A2B = self.genA2B(real_A_z).detach()
-        # fake_B2A = self.genB2A(real_B_z).detach()
-        #
-        # fake_LA_logit, fake_GA_logit, fake_A_cam_logit, _, _ = self.disA(fake_B2A)
-        # fake_LB_logit, fake_GB_logit, fake_B_cam_logit, _, _ = self.disB(fake_A2B)
-        #
-        # D_ad_loss_GA = self.MSE_loss(real_GA_logit, torch.ones_like(real_GA_logit).to(self.device)) + self.MSE_loss(
-        #     fake_GA_logit, torch.zeros_like(fake_GA_logit).to(self.device))
-        # D_ad_loss_LA = self.MSE_loss(real_LA_logit, torch.ones_like(real_LA_logit).to(self.device)) + self.MSE_loss(
-        #     fake_LA_logit, torch.zeros_like(fake_LA_logit).to(self.device))
-        # D_ad_loss_GB = self.MSE_loss(real_GB_logit, torch.ones_like(real_GB_logit).to(self.device)) + self.MSE_loss(
-        #     fake_GB_logit, torch.zeros_like(fake_GB_logit).to(self.device))
-        # D_ad_loss_LB = self.MSE_loss(real_LB_logit, torch.ones_like(real_LB_logit).to(self.device)) + self.MSE_loss(
-        #     fake_LB_logit, torch.zeros_like(fake_LB_logit).to(self.device))
-        # D_ad_cam_loss_A = self.MSE_loss(real_A_cam_logit,
-        #                                 torch.ones_like(real_A_cam_logit).to(self.device)) + self.MSE_loss(
-        #     fake_A_cam_logit, torch.zeros_like(fake_A_cam_logit).to(self.device))
-        # D_ad_cam_loss_B = self.MSE_loss(real_B_cam_logit,
-        #                                 torch.ones_like(real_B_cam_logit).to(self.device)) + self.MSE_loss(
-        #     fake_B_cam_logit, torch.zeros_like(fake_B_cam_logit).to(self.device))
-        #
-        # loss_D_A = self.adv_weight * (D_ad_loss_GA + D_ad_cam_loss_A + D_ad_loss_LA)
-        # loss_D_B = self.adv_weight * (D_ad_loss_GB + D_ad_cam_loss_B + D_ad_loss_LB)
-        #
-        # self.loss_D = loss_D_A + loss_D_B
-        # self.loss_D.backward()
-        # self.optimizer_D.step()
-        #
-        # # Update G
-        #
-        # self.optimizer_G.zero_grad()
-        #
-        # _, _, _, A_heatmap, real_A_z = self.disA(self.real_A)
-        # _, _, _, B_heatmap, real_B_z = self.disB(self.real_B)
-        #
-        # fake_A2B = self.genA2B(real_A_z)
-        # fake_B2A = self.genB2A(real_B_z)
-        #
-        # fake_LA_logit, fake_GA_logit, fake_A_cam_logit, _, fake_A_z = self.disA(fake_B2A)
-        # fake_LB_logit, fake_GB_logit, fake_B_cam_logit, _, fake_B_z = self.disB(fake_A2B)
-        #
-        # fake_B2A2B = self.genA2B(fake_A_z)
-        # fake_A2B2A = self.genB2A(fake_B_z)
-        #
-        # G_ad_loss_GA = self.MSE_loss(fake_GA_logit, torch.ones_like(fake_GA_logit).to(self.device))
-        # G_ad_loss_LA = self.MSE_loss(fake_LA_logit, torch.ones_like(fake_LA_logit).to(self.device))
-        # G_ad_loss_GB = self.MSE_loss(fake_GB_logit, torch.ones_like(fake_GB_logit).to(self.device))
-        # G_ad_loss_LB = self.MSE_loss(fake_LB_logit, torch.ones_like(fake_LB_logit).to(self.device))
-        #
-        # G_ad_cam_loss_A = self.MSE_loss(fake_A_cam_logit, torch.ones_like(fake_A_cam_logit).to(self.device))
-        # G_ad_cam_loss_B = self.MSE_loss(fake_B_cam_logit, torch.ones_like(fake_B_cam_logit).to(self.device))
-        #
-        # G_cycle_loss_A = self.L1_loss(fake_A2B2A, self.real_A)
-        # G_cycle_loss_B = self.L1_loss(fake_B2A2B, self.real_B)
-        #
-        # fake_A2A = self.genB2A(real_A_z)
-        # fake_B2B = self.genA2B(real_B_z)
-        #
-        # G_recon_loss_A = self.L1_loss(fake_A2A, self.real_A)
-        # G_recon_loss_B = self.L1_loss(fake_B2B, self.real_B)
-        #
-        # G_loss_A = self.adv_weight * (
-        #             G_ad_loss_GA + G_ad_cam_loss_A + G_ad_loss_LA) + self.cycle_weight * G_cycle_loss_A + self.identity_weight * G_recon_loss_A
-        # G_loss_B = self.adv_weight * (
-        #             G_ad_loss_GB + G_ad_cam_loss_B + G_ad_loss_LB) + self.cycle_weight * G_cycle_loss_B + self.identity_weight * G_recon_loss_B
-        #
-        # self.loss_G = G_loss_A + G_loss_B
-        # self.loss_G.backward()
-        # self.optimizer_G.step()
-        #
-        #
-        # if display:
-        #     self.real_A_heatmap = tensor2im(A_heatmap, use_cam=True, image_size=self.image_size)
-        #     self.fake_A2A = tensor2im(fake_A2A)
-        #     self.fake_A2B = tensor2im(fake_A2B)
-        #     self.fake_A2B2A = tensor2im(fake_A2B2A)
-        #
-        #     self.real_B_heatmap = tensor2im(B_heatmap, use_cam=True, image_size=self.image_size)
-        #     self.fake_B2B = tensor2im(fake_B2B)
-        #     self.fake_B2A = tensor2im(fake_B2A)
-        #     self.fake_B2A2B = tensor2im(fake_B2A2B)
+        # real_LA_logit, real_GA_logit, _, _, _, real_A_cam_logit10, real_A_cam_logit46, real_A_cam_logit190, _, _, _ = self.disA(
+        #     self.real_A_Bcolor)
+        # real_LB_logit, real_GB_logit, _, _, _, real_B_cam_logit10, real_B_cam_logit46, real_B_cam_logit190, _, _, _ = self.disB(
+        #     self.real_B_Acolor)
 
+        
+        # _, _, real_A10, real_A46, real_A190, _, _, _, _, _, _ = self.disA(
+        #     self.real_A)
+        # _, _, real_B10, real_B46, real_B190, _, _, _, _, _, _ = self.disB(
+        #     self.real_B)
+
+        fake_A2B = self.genA2B(real_A10, real_A46, real_A190).detach()
+        fake_B2A = self.genB2A(real_B10, real_B46, real_B190).detach()
+
+        fake_LA_logit, fake_GA_logit, _, _, _, fake_A_cam_logit10, fake_A_cam_logit46, fake_A_cam_logit190, _, _, _ = self.disA(
+            fake_B2A)
+        fake_LB_logit, fake_GB_logit, _, _, _, fake_B_cam_logit10, fake_B_cam_logit46, fake_B_cam_logit190, _, _, _ = self.disB(
+            fake_A2B)
+        
+        D_ad_loss_GA = self.MSE_loss(real_GA_logit, torch.ones_like(real_GA_logit).to(self.device)) + self.MSE_loss(
+            fake_GA_logit, torch.zeros_like(fake_GA_logit).to(self.device))
+        D_ad_loss_LA = self.MSE_loss(real_LA_logit, torch.ones_like(real_LA_logit).to(self.device)) + self.MSE_loss(
+            fake_LA_logit, torch.zeros_like(fake_LA_logit).to(self.device))
+        D_ad_loss_GB = self.MSE_loss(real_GB_logit, torch.ones_like(real_GB_logit).to(self.device)) + self.MSE_loss(
+            fake_GB_logit, torch.zeros_like(fake_GB_logit).to(self.device))
+        D_ad_loss_LB = self.MSE_loss(real_LB_logit, torch.ones_like(real_LB_logit).to(self.device)) + self.MSE_loss(
+            fake_LB_logit, torch.zeros_like(fake_LB_logit).to(self.device))
+        
+        D_ad_cam_loss_A = self.MSE_loss(real_A_cam_logit10, torch.ones_like(real_A_cam_logit10).to(self.device)) +\
+                          self.MSE_loss(fake_A_cam_logit10, torch.zeros_like(fake_A_cam_logit10).to(self.device)) + \
+                          self.MSE_loss(real_A_cam_logit46, torch.ones_like(real_A_cam_logit46).to(self.device)) + \
+                          self.MSE_loss(fake_A_cam_logit46, torch.zeros_like(fake_A_cam_logit46).to(self.device)) + \
+                          self.MSE_loss(real_A_cam_logit190, torch.ones_like(real_A_cam_logit190).to(self.device)) + \
+                          self.MSE_loss(fake_A_cam_logit190, torch.zeros_like(fake_A_cam_logit190).to(self.device))
+        
+        D_ad_cam_loss_B = self.MSE_loss(real_B_cam_logit10, torch.ones_like(real_B_cam_logit10).to(self.device)) +\
+                          self.MSE_loss(fake_B_cam_logit10, torch.zeros_like(fake_B_cam_logit10).to(self.device)) + \
+                          self.MSE_loss(real_B_cam_logit46, torch.ones_like(real_B_cam_logit46).to(self.device)) + \
+                          self.MSE_loss(fake_B_cam_logit46, torch.zeros_like(fake_B_cam_logit46).to(self.device)) + \
+                          self.MSE_loss(real_B_cam_logit190, torch.ones_like(real_B_cam_logit190).to(self.device)) + \
+                          self.MSE_loss(fake_B_cam_logit190, torch.zeros_like(fake_B_cam_logit190).to(self.device))
+        
+        
+        
+        loss_D_A = self.adv_weight * (D_ad_loss_GA + D_ad_cam_loss_A + D_ad_loss_LA)
+        loss_D_B = self.adv_weight * (D_ad_loss_GB + D_ad_cam_loss_B + D_ad_loss_LB)
+        
+
+        self.loss_D = loss_D_A + loss_D_B
+        self.loss_D.backward()
+        self.optimizer_D.step()
+
+        # Update G
+
+        self.optimizer_G.zero_grad()
+
+        _, _, real_A10, real_A46, real_A190, _, _, _, realA_heatmap10,  realA_heatmap46,  realA_heatmap190 = self.disA(
+            self.real_A)
+        
+        _, _, real_B10, real_B46, real_B190, _, _, _, realB_heatmap10,  realB_heatmap46,  realB_heatmap190 = self.disB(
+            self.real_B)
+
+        fake_A2B = self.genA2B(real_A10, real_A46, real_A190)
+        fake_B2A = self.genB2A(real_B10, real_B46, real_B190)
+
+        # TODO finish left
+
+        fake_LA_logit, fake_GA_logit, fake_A10, fake_A46, fake_A190, fake_A_cam_logit10, fake_A_cam_logit46, fake_A_cam_logit190, fake_B2A_heatmap10, fake_B2A_heatmap46, fake_B2A_heatmap190 = self.disA(
+            fake_B2A)
+        fake_LB_logit, fake_GB_logit, fake_B10, fake_B46, fake_B190, fake_B_cam_logit10, fake_B_cam_logit46, fake_B_cam_logit190, fake_A2B_heatmap10, fake_A2B_heatmap46, fake_A2B_heatmap190 = self.disB(
+            fake_A2B)
+
+        fake_B2A2B = self.genA2B(fake_A10, fake_A46, fake_A190)
+        fake_A2B2A = self.genB2A(fake_B10, fake_B46, fake_B190)
+        
+        
+        G_ad_loss_GA = self.MSE_loss(fake_GA_logit, torch.ones_like(fake_GA_logit).to(self.device))
+        G_ad_loss_LA = self.MSE_loss(fake_LA_logit, torch.ones_like(fake_LA_logit).to(self.device))
+        G_ad_loss_GB = self.MSE_loss(fake_GB_logit, torch.ones_like(fake_GB_logit).to(self.device))
+        G_ad_loss_LB = self.MSE_loss(fake_LB_logit, torch.ones_like(fake_LB_logit).to(self.device))
+
+        G_ad_cam_loss_A10 = self.MSE_loss(fake_A_cam_logit10, torch.ones_like(fake_A_cam_logit10).to(self.device))
+        G_ad_cam_loss_B10 = self.MSE_loss(fake_B_cam_logit10, torch.ones_like(fake_B_cam_logit10).to(self.device))
+       
+        G_ad_cam_loss_A46 = self.MSE_loss(fake_A_cam_logit46, torch.ones_like(fake_A_cam_logit46).to(self.device))
+        G_ad_cam_loss_B46 = self.MSE_loss(fake_B_cam_logit46, torch.ones_like(fake_B_cam_logit46).to(self.device))
+        
+        G_ad_cam_loss_A190 = self.MSE_loss(fake_A_cam_logit190, torch.ones_like(fake_A_cam_logit190).to(self.device))
+        G_ad_cam_loss_B190 = self.MSE_loss(fake_B_cam_logit190, torch.ones_like(fake_B_cam_logit190).to(self.device))
+       
+        G_cycle_loss_A = self.L1_loss(fake_A2B2A, self.real_A)
+        G_cycle_loss_B = self.L1_loss(fake_B2A2B, self.real_B)
+
+        fake_A2A = self.genB2A(real_A10, real_A46, real_A190)
+        fake_B2B = self.genA2B(real_B10, real_B46, real_B190)
+
+        G_recon_loss_A = self.L1_loss(fake_A2A, self.real_A)
+        G_recon_loss_B = self.L1_loss(fake_B2B, self.real_B)
+
+        G_loss_A = self.adv_weight * (
+                    G_ad_loss_GA + G_ad_cam_loss_A10 + G_ad_cam_loss_A46 + G_ad_cam_loss_A190 + G_ad_loss_LA) + self.cycle_weight * G_cycle_loss_A + self.identity_weight * G_recon_loss_A
+        G_loss_B = self.adv_weight * (
+                    G_ad_loss_GB + G_ad_cam_loss_B10 + G_ad_cam_loss_B46 + G_ad_cam_loss_B190 + G_ad_loss_LB) + self.cycle_weight * G_cycle_loss_B + self.identity_weight * G_recon_loss_B
+
+        self.loss_G = G_loss_A + G_loss_B
+        self.loss_G.backward()
+        self.optimizer_G.step()
+
+
+        if display:
+            self.realA_heatmap10 = tensor2im(realA_heatmap10, use_cam=True, image_size=self.image_size)
+            self.realA_heatmap46 = tensor2im(realA_heatmap46, use_cam=True, image_size=self.image_size)
+            self.realA_heatmap190 = tensor2im(realA_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_B2A_heatmap10 = tensor2im(fake_B2A_heatmap10, use_cam=True, image_size=self.image_size)
+            self.fake_B2A_heatmap46 = tensor2im(fake_B2A_heatmap46, use_cam=True, image_size=self.image_size)
+            self.fake_B2A_heatmap190 = tensor2im(fake_B2A_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_A2A = tensor2im(fake_A2A)
+            self.fake_A2B = tensor2im(fake_A2B)
+            self.fake_A2B2A = tensor2im(fake_A2B2A)
+
+            self.realB_heatmap10 = tensor2im(realB_heatmap10, use_cam=True, image_size=self.image_size)
+            self.realB_heatmap46 = tensor2im(realB_heatmap46, use_cam=True, image_size=self.image_size)
+            self.realB_heatmap190 = tensor2im(realB_heatmap190, use_cam=True, image_size=self.image_size)
+
+            self.fake_A2B_heatmap10 = tensor2im(fake_A2B_heatmap10, use_cam=True, image_size=self.image_size)
+            self.fake_A2B_heatmap46 = tensor2im(fake_A2B_heatmap46, use_cam=True, image_size=self.image_size)
+            self.fake_A2B_heatmap190 = tensor2im(fake_A2B_heatmap190, use_cam=True, image_size=self.image_size)
+            self.fake_B2B = tensor2im(fake_B2B)
+            self.fake_B2A = tensor2im(fake_B2A)
+            self.fake_B2A2B = tensor2im(fake_B2A2B)
+#
 
 

@@ -1583,107 +1583,122 @@ class NICE3SResnetGenerator(nn.Module):
         # self.img_size = img_size
         # self.light = light
 
-        # h/64, w/64, 2048 = > h/64, w/64, 4096
+        # h/64, w/64, 2048 = > h/32, w/32, 1024
         upblock0_190x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(2048, 4096, kernel_size=3, stride=1, padding=0, bias=True),
-            ILN(4096),
+            nn.Conv2d(ngf * 32, ngf * 16, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf * 16),
+            nn.ReLU(True),
+            nn.Conv2d(ngf * 16, ngf * 16 * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(ngf * 16),
             nn.ReLU(True)
         ]
 
         fc190 = [
-            nn.Linear(4096, 4096, bias=False),
+            nn.Linear(ngf * 16, ngf * 16, bias=False),
             nn.ReLU(True),
-            nn.Linear(4096, 4096, bias=False),
+            nn.Linear(ngf * 16, ngf * 16, bias=False),
             nn.ReLU(True),
         ]
+
         self.fc190 = nn.Sequential(*fc190)
-        self.gamma190 = nn.Linear(4096, 4096, bias=False)
-        self.beta190 = nn.Linear(4096, 4096, bias=False)
+        self.gamma190 = nn.Linear(ngf * 16, ngf * 16, bias=False)
+        self.beta190 = nn.Linear(ngf * 16, ngf * 16, bias=False)
 
         for i in range(n_blocks):
-            setattr(self, 'upblock1-{}_190x'.format(i), ResnetAdaILNBlock(4096, use_bias=False))
+            setattr(self, 'upblock1-{}_190x'.format(i), ResnetAdaILNBlock(ngf * 16, use_bias=False))
 
-        # h/64, w/64, 4096 => h/16, w/16, 1024
+        # h/32, w/32, 1024 => h/16, w/16, 512
         upblock2_190x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(4096, 2048, kernel_size=3, stride=1, padding=0, bias=False),
-            ILN(2048),
+            nn.Conv2d(ngf * 16, ngf * 8, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf * 8),
             nn.ReLU(True),
-            nn.Conv2d(2048, 1024 * 16, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Conv2d(ngf * 8, ngf * 8 * 4, kernel_size=1, stride=1, padding=0, bias=True),
             nn.PixelShuffle(2),
-            ILN(1024),
+            ILN(ngf * 8),
             nn.ReLU(True)
         ]
+
+        self.conv190_46 = nn.Conv2d(ngf * 8 * 2, ngf * 8, kernel_size=1, stride=1, padding=0, bias=False)
+
 
         # 46
-        # h/16, w/16, 512 = > h/16, w/16, 1024 
+        # h/16, w/16, 512 = > h/8, w/8, 256
         upblock0_46x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(512, 1024, kernel_size=3, stride=1, padding=0, bias=True),
-            ILN(1024),
+            nn.Conv2d(ngf * 8, ngf * 4, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf * 4),
+            nn.ReLU(True),
+            nn.Conv2d(ngf * 4, ngf * 4 * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(ngf * 4),
             nn.ReLU(True)
         ]
 
-        self.fc190_46 = nn.Linear(1024 * 2, 1024, bias=False)
-
         fc46 = [
-            nn.Linear(1024, 1024, bias=False),
+            nn.Linear(ngf * 4, ngf * 4, bias=False),
             nn.ReLU(True),
-            nn.Linear(1024, 1024, bias=False),
+            nn.Linear(ngf * 4, ngf * 4, bias=False),
             nn.ReLU(True),
         ]
         self.fc46 = nn.Sequential(*fc46)
-        self.gamma46 = nn.Linear(1024, 1024, bias=False)
-        self.beta46 = nn.Linear(1024, 1024, bias=False)
+        self.gamma46 = nn.Linear(ngf * 4, ngf * 4, bias=False)
+        self.beta46 = nn.Linear(ngf * 4, ngf * 4, bias=False)
 
         for i in range(n_blocks):
-            setattr(self, 'upblock1-{}_46x'.format(i), ResnetAdaILNBlock(1024, use_bias=False))
+            setattr(self, 'upblock1-{}_46x'.format(i), ResnetAdaILNBlock(ngf * 4, use_bias=False))
 
-        # h/16, w/16, 1024 => h/4, w/4, 256
+        # h/8, w/8, 256 => h/4, w/4, 128
         upblock2_46x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(1024, 512, kernel_size=3, stride=1, padding=0, bias=False),
-            ILN(512),
+            nn.Conv2d(ngf * 4, ngf * 2, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf * 2),
             nn.ReLU(True),
-            nn.Conv2d(512, 256 * 16, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Conv2d(ngf * 2, ngf * 2 * 4, kernel_size=1, stride=1, padding=0, bias=True),
             nn.PixelShuffle(2),
-            ILN(256),
+            ILN(ngf * 2),
             nn.ReLU(True)
         ]
 
-        # h/4, w/4, 128 => h/4, w/4, 256
+        self.conv46_10 = nn.Conv2d(ngf * 2 * 2, ngf * 2, kernel_size=1, stride=1, padding=0, bias=False)
+        # self.fc46_10 = nn.Linear(ngf * 2 * 2, ngf * 2, bias=False)
+
+        # h/4, w/4, 128 => h/2, w/2, 64
         upblock0_10x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=0, bias=True),
-            ILN(256),
+            nn.Conv2d(ngf * 2, ngf, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf),
+            nn.ReLU(True),
+            nn.Conv2d(ngf, ngf * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(ngf),
             nn.ReLU(True)
         ]
 
-        self.fc46_10 = nn.Linear(256 * 2, 256, bias=False)
-
         fc10 = [
-            nn.Linear(256, 256, bias=False),
+            nn.Linear(ngf, ngf, bias=False),
             nn.ReLU(True),
-            nn.Linear(256, 256, bias=False),
+            nn.Linear(ngf, ngf, bias=False),
             nn.ReLU(True),
         ]
         self.fc10 = nn.Sequential(*fc10)
-        self.gamma10 = nn.Linear(256, 256, bias=False)
-        self.beta10 = nn.Linear(256, 256, bias=False)
+        self.gamma10 = nn.Linear(ngf, ngf, bias=False)
+        self.beta10 = nn.Linear(ngf, ngf, bias=False)
 
         for i in range(n_blocks):
-            setattr(self, 'upblock1-{}_10x'.format(i), ResnetAdaILNBlock(256, use_bias=False))
+            setattr(self, 'upblock1-{}_10x'.format(i), ResnetAdaILNBlock(ngf, use_bias=False))
 
-        # h/4, w/4, 256 => h, w, 64
+        # h/2, w/2, 64 => h, w, 64
         upblock2_10x = [
             nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0, bias=False),
-            ILN(128),
+            nn.Conv2d(ngf, ngf // 2, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(ngf // 2),
             nn.ReLU(True),
-            nn.Conv2d(128, 64 * 16, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Conv2d(ngf // 2, ngf * 4, kernel_size=1, stride=1, padding=0, bias=True),
             nn.PixelShuffle(2),
-            ILN(64),
+            ILN(ngf),
             nn.ReLU(True),
         ]
 
@@ -1704,7 +1719,7 @@ class NICE3SResnetGenerator(nn.Module):
     def forward(self, x10, x46, x190):
         # x10, h/4, w/4, 128
         # x46, h/16, w/16, 512
-        # x19 h/64, w/64, 2048
+        # x190 h / 64, w / 64, 2048
 
         x = x190
         x = self.upblock0_190x(x)
@@ -1717,9 +1732,12 @@ class NICE3SResnetGenerator(nn.Module):
         
         x_0 = x
         x = x46
-        x = self.upblock0_46x(x)        
-        x = torch.cat([x, x_0])
-        x = self.fc190_46(x)
+        # print(x.size(), x_0.size())
+        x = torch.cat([x, x_0], 1)
+        print(x.size())
+        # x = self.fc190_46(x)
+        x = self.conv190_46(x)
+        x = self.upblock0_46x(x)
         x_ = torch.nn.functional.adaptive_avg_pool2d(x, 1)
         x_ = self.fc46(x_.view(x_.size(0), -1))
         gamma, beta = self.gamma46(x_), self.beta46(x_)
@@ -1729,9 +1747,10 @@ class NICE3SResnetGenerator(nn.Module):
         
         x_0 = x
         x = x10
+        x = torch.cat([x, x_0], 1)
+        # x = self.fc46_10(x)
+        x = self.conv46_10(x)
         x = self.upblock0_10x(x)
-        x = torch.cat([x, x_0])
-        x = self.fc46_10(x)
         x_ = torch.nn.functional.adaptive_avg_pool2d(x, 1)
         x_ = self.fc10(x_.view(x_.size(0), -1))
         gamma, beta = self.gamma10(x_), self.beta10(x_)
@@ -1747,102 +1766,100 @@ class NICE3SResnetGenerator(nn.Module):
 class NICE3SDiscriminator(nn.Module):
     def __init__(self, input_nc, ndf=64):
         super(NICE3SDiscriminator, self).__init__()
-        # K4S2 rf = 4
+
         dis4_10 = [
+            # h, w, 3 => h/2, w/2, 64, rf = 4
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
                 nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
 
-            # (h/2, w/2, 64), rf = 4
-
+            # h/2, w/2, 64 => h/4, w/4, 128, rf = 10
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
                 nn.Conv2d(ndf, ndf * 2, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
-
-            # (h/4, w/4, 128), rf = 10
         ]
 
         self.fc10 = nn.utils.spectral_norm(
-            nn.Linear(128, 1, bias=False))
-        self.conv1x1_10x = nn.Conv2d(128 * 3, 128, kernel_size=1, stride=1, bias=True)
+            nn.Linear(ndf * 2 * 2, 1, bias=False))
+        self.conv1x1_10x = nn.Conv2d(ndf * 2 * 3, ndf * 2, kernel_size=1, stride=1, bias=True)
         self.leaky_relu_10x = nn.LeakyReLU(0.2, True)
 
-        # h/8, w/8, 256,  rf = 22
+        # h/4, w/4, 128 => h/8, w/8, 256,  rf = 22
         dis22 = [
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=0, bias=True)),
+                nn.Conv2d(ndf * 2, ndf * 4, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
         ]
 
-        # h/16, w/16, 512,  rf = 46
+        # h/8, w/8, 256 => h/16, w/16, 512,  rf = 46
         dis46 = [
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(256, 512, kernel_size=4, stride=2, padding=0, bias=True)),
+                nn.Conv2d(ndf * 4, ndf * 8, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
         ]
 
         self.fc46 = nn.utils.spectral_norm(
-            nn.Linear(512, 1, bias=False))
-        self.conv1x1_46x = nn.Conv2d(512 * 3, 512, kernel_size=1, stride=1, bias=True)
+            nn.Linear(ndf * 8 * 2, 1, bias=False))
+        self.conv1x1_46x = nn.Conv2d(ndf * 8 * 3, ndf * 8, kernel_size=1, stride=1, bias=True)
         self.leaky_relu_46x = nn.LeakyReLU(0.2, True)
 
         # 70x70 classifier
         cls70x = [
-            # h/8, w/8, 512,  rf = 46
+            # h/8, w/8, 256 => h/8, w/8, 512,  rf = 46
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=0, bias=True)),
+                nn.Conv2d(ndf * 4, ndf * 8, kernel_size=4, stride=1, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
 
-            # h/8, w/8, 1,  rf = 70
+            # h/8, w/8, 512 => h/8, w/8, 1,  rf = 70
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(512, 1, kernel_size=4, stride=1, padding=0, bias=True)),
+                nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=1, padding=0, bias=True)),
         ]
 
-        # h/32, w/32, 1024,  rf = 190
-        dis190 = [
+        # h/16, w/16, 512 => h/32, w/32, 1024,  rf = 94
+        dis94 = [
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(512, 1024, kernel_size=4, stride=2, padding=0, bias=True)),
+                nn.Conv2d(ndf * 8, ndf * 16, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
         ]
 
         # 286x286 classifier
         cls286x = [
-            # h/32, w/32, 2048,  rf = 190
+            # h/32, w/32, 1024 => h/32, w/32, 2048,  rf = 190
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(1024, 2048, kernel_size=4, stride=1, padding=0, bias=True)),
+                nn.Conv2d(ndf * 16, ndf * 32, kernel_size=4, stride=1, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
 
             # h/32, w/32, 1,  rf = 286
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(2048, 1, kernel_size=4, stride=1, padding=0, bias=True)),
+                nn.Conv2d(ndf * 32, 1, kernel_size=4, stride=1, padding=0, bias=True)),
         ]
 
-        # h/64, w/64, 2048,  rf = 190
+        # h/32, w/32, 1024 => h/64, w/64, 2048,  rf = 190
         dis190 = [
             nn.ReflectionPad2d(1),
             nn.utils.spectral_norm(
-                nn.Conv2d(1024, 2048, kernel_size=4, stride=2, padding=0, bias=True)),
+                nn.Conv2d(ndf * 16, ndf * 32, kernel_size=4, stride=2, padding=0, bias=True)),
             nn.LeakyReLU(0.2, True),
         ]
 
         self.fc190 = nn.utils.spectral_norm(
-            nn.Linear(2048, 1, bias=False))
-        self.conv1x1_190x = nn.Conv2d(2048 * 3, 2048, kernel_size=1, stride=1, bias=True)
+            nn.Linear(ndf * 32 * 2, 1, bias=False))
+        self.conv1x1_190x = nn.Conv2d(ndf * 32 * 3, ndf * 32, kernel_size=1, stride=1, bias=True)
         self.leaky_relu_190x = nn.LeakyReLU(0.2, True)
 
         self.dis4_10 = nn.Sequential(*dis4_10)
         self.dis22 = nn.Sequential(*dis22)
         self.dis46 = nn.Sequential(*dis46)
-        self.dis190 = nn.Sequential(*dis190)
+        self.dis94 = nn.Sequential(*dis94)
         self.dis190 = nn.Sequential(*dis190)
         self.cls70x = nn.Sequential(*cls70x)
         self.cls286x = nn.Sequential(*cls286x)
@@ -1888,7 +1905,7 @@ class NICE3SDiscriminator(nn.Module):
 
         x46 = x
 
-        x = self.dis190(x)
+        x = self.dis94(x)
         # cls286x
         cls286 = self.cls286x(x)
 
@@ -1908,5 +1925,7 @@ class NICE3SDiscriminator(nn.Module):
         heatmap190x = torch.sum(x, dim=1, keepdim=True)
 
         x190 = x
+
+
 
         return cls70, cls286, x10, x46, x190, cam_logit_10, cam_logit_46, cam_logit_190, heatmap10x, heatmap46x, heatmap190x
