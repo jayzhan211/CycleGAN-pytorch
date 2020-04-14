@@ -1229,6 +1229,111 @@ class NICEDiscriminator(nn.Module):
         return out0, out1, cam_logit, heatmap, z
 
 
+class NICESADiscriminator(nn.Module):
+    def __init__(self, input_nc, ndf=64, n_layers=7):
+        super(NICESADiscriminator, self).__init__()
+
+        # 3, h, w => 64, h/2, w/2, rf=4
+        model = [nn.ReflectionPad2d(1),
+                 nn.utils.spectral_norm(
+                     nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, padding=0, bias=True)),
+                 nn.LeakyReLU(0.2, True)]
+        # 64, h/2, w/2 => 128, h/4, w/4
+        model += [nn.ReflectionPad2d(1),
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf, ndf * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+
+        # SA module
+
+        self.query_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.key_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.value_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+
+        self.conv1x1 = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=True))
+        self.leaky_relu = nn.LeakyReLU(0.2, True)
+
+        self.softmax = nn.Softmax(dim=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        Dis0_0 = []
+        for i in range(2, n_layers - 4):  # 1+3*2^0 + 3*2^1 + 3*2^2 =22
+            mult = 2 ** (i - 1)
+            Dis0_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        mult = 2 ** (n_layers - 4 - 1)
+        Dis0_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 = 46
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+        mult = 2 ** (n_layers - 4)
+        self.conv0 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 + 3*2^3= 70
+            nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        Dis1_0 = []
+        for i in range(n_layers - 4,
+                       n_layers - 2):  # 1+3*2^0 + 3*2^1 + 3*2^2 + 3*2^3=46, 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 = 190
+            mult = 2 ** (i - 1)
+            Dis1_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        mult = 2 ** (n_layers - 2 - 1)
+        Dis1_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5= 190 + 96 = 190
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+        mult = 2 ** (n_layers - 2)
+        self.conv1 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5 + 3*2^5 = 286
+            nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        # self.attn = Self_Attn( ndf * mult)
+        self.pad = nn.ReflectionPad2d(1)
+
+        self.model = nn.Sequential(*model)
+        self.Dis0_0 = nn.Sequential(*Dis0_0)
+        self.Dis0_1 = nn.Sequential(*Dis0_1)
+        self.Dis1_0 = nn.Sequential(*Dis1_0)
+        self.Dis1_1 = nn.Sequential(*Dis1_1)
+
+
+
+    def forward(self, x):
+        x = self.model(x)
+
+        x_0 = x
+        # x = (1, 128, h/4, w/4)
+        b, c, h, w = x.size()
+        proj_query = self.query_conv(x).view(b, c, -1).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(b, c, -1)
+
+        # energy = (b, hw, hw)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(b, c, -1)
+        x = torch.bmm(proj_value, attention).view(b, c, h, w)
+        x = self.leaky_relu(self.conv1x1(x))
+        x = self.gamma * x + x_0
+        heatmap = torch.sum(x, dim=1, keepdim=True)
+
+        z = x
+
+        x0 = self.Dis0_0(x)
+        x1 = self.Dis1_0(x0)
+        x0 = self.Dis0_1(x0)
+        x1 = self.Dis1_1(x1)
+        x0 = self.pad(x0)
+        x1 = self.pad(x1)
+        out0 = self.conv0(x0)
+        out1 = self.conv1(x1)
+
+        return out0, out1, heatmap, z
+
+
 class DiscriminatorUGATIT(nn.Module):
     def __init__(self, input_nc, ndf=64, n_layers=5):
         super(DiscriminatorUGATIT, self).__init__()
@@ -1491,7 +1596,7 @@ class NICEResnetGenerator(nn.Module):
         assert (n_blocks >= 0)
         super(NICEResnetGenerator, self).__init__()
         self.input_nc = input_nc
-        self.output_nc = output_nc
+        self.output_nc = output_ncNICE
         self.ngf = ngf
         self.n_blocks = n_blocks
         self.img_size = img_size
@@ -1573,6 +1678,113 @@ class NICEResnetGenerator(nn.Module):
         return out
 
 
+class NICEV2ResnetGenerator(nn.Module):
+    def __init__(self, input_nc, output_nc, ngf=64, n_blocks=6, img_size=256):
+        assert (n_blocks >= 0)
+        super(NICEV2ResnetGenerator, self).__init__()
+        self.input_nc = input_nc
+        self.output_nc = output_nc
+        self.ngf = ngf
+        self.n_blocks = n_blocks
+        self.img_size = img_size
+
+        n_downsampling = 2
+
+        mult = 2 ** n_downsampling
+        UpBlock0 = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(int(ngf * mult / 2), ngf * mult, kernel_size=3, stride=1, padding=0, bias=True),
+            ILN(ngf * mult),
+            nn.ReLU(True)
+        ]
+
+        self.relu = nn.ReLU(True)
+
+        # # Gamma, Beta block
+        # if self.light:
+        #     FC = [nn.Linear(ngf * mult, ngf * mult, bias=False),
+        #           nn.ReLU(True),
+        #           nn.Linear(ngf * mult, ngf * mult, bias=False),
+        #           nn.ReLU(True)]
+        # else:
+        #     FC = [nn.Linear(img_size // mult * img_size // mult * ngf * mult, ngf * mult, bias=False),
+        #           nn.ReLU(True),
+        #           nn.Linear(ngf * mult, ngf * mult, bias=False),
+        #           nn.ReLU(True)]
+
+        conv_style = [
+            nn.Conv2d(ngf * mult, ngf * mult, kernel_size=img_size // mult, stride=1, padding=0,
+                      groups=img_size // mult, bias=False),
+            nn.ReLU(True),
+        ]
+        fc_style = [
+            nn.Linear(ngf * mult, ngf * mult, bias=False),
+            nn.ReLU(True),
+            nn.Linear(ngf * mult, ngf * mult, bias=False),
+            nn.ReLU(True),
+        ]
+
+        self.gamma = nn.Linear(ngf * mult, ngf * mult, bias=False)
+        self.beta = nn.Linear(ngf * mult, ngf * mult, bias=False)
+
+        # Up-Sampling Bottleneck
+        for i in range(n_blocks):
+            setattr(self, 'UpBlock1_' + str(i + 1), ResnetAdaILNBlock(ngf * mult, use_bias=False))
+
+        # Up-Sampling
+        UpBlock2 = []
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            # Experiments show that the performance of Up-sample and Sub-pixel is similar,
+            #  although theoretically Sub-pixel has more parameters and less FLOPs.
+            UpBlock2 += [nn.Upsample(scale_factor=2, mode='nearest'),
+                         nn.ReflectionPad2d(1),
+                         nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=False),
+                         ILN(int(ngf * mult / 2)),
+                         nn.ReLU(True)]
+            # UpBlock2 += [nn.ReflectionPad2d(1),
+            #              nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=False),
+            #              ILN(int(ngf * mult / 2)),
+            #              nn.ReLU(True),
+            #              nn.Conv2d(int(ngf * mult / 2), int(ngf * mult / 2) * 4, kernel_size=1, stride=1, bias=True),
+            #              nn.PixelShuffle(2),
+            #              ILN(int(ngf * mult / 2)),
+            #              nn.ReLU(True)
+            #              ]
+
+        UpBlock2 += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=False),
+            nn.Tanh()
+        ]
+
+        # self.FC = nn.Sequential(*FC)
+        self.conv_style = nn.Sequential(*conv_style)
+        self.fc_style = nn.Sequential(*fc_style)
+        self.UpBlock0 = nn.Sequential(*UpBlock0)
+        self.UpBlock2 = nn.Sequential(*UpBlock2)
+
+    def forward(self, z):
+        x = z
+        x = self.UpBlock0(x)
+
+        # if self.light:
+        #     x_ = torch.nn.functional.adaptive_avg_pool2d(x, 1)
+        #     x_ = self.FC(x_.view(x_.shape[0], -1))
+        # else:
+        #     x_ = self.FC(x.view(x.shape[0], -1))
+
+        x_ = self.fc_style(self.conv_style(x).view(x.size(0), -1))
+        gamma, beta = self.gamma(x_), self.beta(x_)
+
+        for i in range(self.n_blocks):
+            x = getattr(self, 'UpBlock1_' + str(i + 1))(x, gamma, beta)
+
+        out = self.UpBlock2(x)
+
+        return out
+
+
 class NICE3SResnetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_blocks=4):
         super(NICE3SResnetGenerator, self).__init__()
@@ -1622,7 +1834,6 @@ class NICE3SResnetGenerator(nn.Module):
         ]
 
         self.conv190_46 = nn.Conv2d(ngf * 8 * 2, ngf * 8, kernel_size=1, stride=1, padding=0, bias=False)
-
 
         # 46
         # h/16, w/16, 512 = > h/8, w/8, 256
@@ -1729,7 +1940,7 @@ class NICE3SResnetGenerator(nn.Module):
         for i in range(self.n_blocks):
             x = getattr(self, 'upblock1-{}_190x'.format(i))(x, gamma, beta)
         x = self.upblock2_190x(x)
-        
+
         x_0 = x
         x = x46
         # print(x.size(), x_0.size())
@@ -1744,7 +1955,7 @@ class NICE3SResnetGenerator(nn.Module):
         for i in range(self.n_blocks):
             x = getattr(self, 'upblock1-{}_46x'.format(i))(x, gamma, beta)
         x = self.upblock2_46x(x)
-        
+
         x_0 = x
         x = x10
         x = torch.cat([x, x_0], 1)
@@ -1925,7 +2136,5 @@ class NICE3SDiscriminator(nn.Module):
         heatmap190x = torch.sum(x, dim=1, keepdim=True)
 
         x190 = x
-
-
 
         return cls70, cls286, x10, x46, x190, cam_logit_10, cam_logit_46, cam_logit_190, heatmap10x, heatmap46x, heatmap190x
