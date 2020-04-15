@@ -13,7 +13,8 @@ import numpy as np
 # Helper Functions
 ###############################################################################
 from utils.util import calc_mean_std
-
+from models.efficientnet import EfficientNet
+from models.bifpn import BIFPN
 
 class EqualLinear(nn.Module):
     def __init__(self, input_dim, output_dim, bias=True, bias_init=0, lr_mul=1, activation=None):
@@ -1333,6 +1334,156 @@ class NICESADiscriminator(nn.Module):
 
         return out0, out1, heatmap, z
 
+class EfficientDetGenerator(nn.Module):
+
+    def __init__(self, output_nc, bifpn_in_channels, bifpn_out_channels, num_stacks, num_outs):
+        super(EfficientDetGenerator, self).__init__()
+        
+        self.model = BIFPN(in_channels=bifpn_in_channels,
+                      out_channels=bifpn_out_channels,
+                      stack=num_stacks,
+                      num_outs=num_outs)
+
+        self.upblock = nn.Sequential(
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(112, 56, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(56),
+            nn.ReLU(True),
+            nn.Conv2d(56, 64 * 16, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(4),
+            ILN(64),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(64, output_nc, kernel_size=7, stride=1, padding=0, bias=False),
+            nn.Tanh()
+        )
+
+    def forward(self, x):
+        outs = self.model(x)
+        # torch.Size([1, 112, 32, 32])
+        # torch.Size([1, 112, 16, 16])
+        # torch.Size([1, 112, 8, 8])
+        # torch.Size([1, 112, 4, 4])
+        # torch.Size([1, 112, 2, 2])
+        out = self.upblock(outs[0])
+
+        return out
+    
+class EfficientDetDiscrminator(nn.Module):
+    # EfficientDet Discriminator
+    def __init__(self, network='efficientnet-b4',):
+        super(EfficientDetDiscrminator, self).__init__()
+        self.backbone = EfficientNet.from_pretrained(network)
+
+    def forward(self, x):
+        feats, x = self.backbone(x)
+        return feats[-5:], x
+
+class ENSADiscriminator(nn.Module):
+    # Efficient Nice Self Attention Discriminator
+    # ENSAD
+    def __init__(self, input_nc, ndf=64, n_layers=7):
+        super(ENSADiscriminator, self).__init__()
+
+        # 3, h, w => 64, h/2, w/2, rf=4
+        model = [nn.ReflectionPad2d(1),
+                 nn.utils.spectral_norm(
+                     nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, padding=0, bias=True)),
+                 nn.LeakyReLU(0.2, True)]
+        # 64, h/2, w/2 => 128, h/4, w/4
+        model += [nn.ReflectionPad2d(1),
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf, ndf * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+
+        # SA module
+
+        self.query_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.key_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.value_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+
+        self.conv1x1 = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=True))
+        self.leaky_relu = nn.LeakyReLU(0.2, True)
+
+        self.softmax = nn.Softmax(dim=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        Dis0_0 = []
+        for i in range(2, n_layers - 4):  # 1+3*2^0 + 3*2^1 + 3*2^2 =22
+            mult = 2 ** (i - 1)
+            Dis0_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        mult = 2 ** (n_layers - 4 - 1)
+        Dis0_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 = 46
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+        mult = 2 ** (n_layers - 4)
+        self.conv0 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 + 3*2^3= 70
+            nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        Dis1_0 = []
+        for i in range(n_layers - 4,
+                       n_layers - 2):  # 1+3*2^0 + 3*2^1 + 3*2^2 + 3*2^3=46, 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 = 190
+            mult = 2 ** (i - 1)
+            Dis1_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        mult = 2 ** (n_layers - 2 - 1)
+        Dis1_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5= 190 + 96 = 190
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+        mult = 2 ** (n_layers - 2)
+        self.conv1 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5 + 3*2^5 = 286
+            nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        # self.attn = Self_Attn( ndf * mult)
+        self.pad = nn.ReflectionPad2d(1)
+
+        self.model = nn.Sequential(*model)
+        self.Dis0_0 = nn.Sequential(*Dis0_0)
+        self.Dis0_1 = nn.Sequential(*Dis0_1)
+        self.Dis1_0 = nn.Sequential(*Dis1_0)
+        self.Dis1_1 = nn.Sequential(*Dis1_1)
+
+
+
+    def forward(self, x):
+        x = self.model(x)
+
+        x_0 = x
+        # x = (1, 128, h/4, w/4)
+        b, c, h, w = x.size()
+        proj_query = self.query_conv(x).view(b, c, -1).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(b, c, -1)
+
+        # energy = (b, hw, hw)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(b, c, -1)
+        x = torch.bmm(proj_value, attention).view(b, c, h, w)
+        x = self.leaky_relu(self.conv1x1(x))
+        x = self.gamma * x + x_0
+        heatmap = torch.sum(x, dim=1, keepdim=True)
+
+        z = x
+
+        x0 = self.Dis0_0(x)
+        x1 = self.Dis1_0(x0)
+        x0 = self.Dis0_1(x0)
+        x1 = self.Dis1_1(x1)
+        x0 = self.pad(x0)
+        x1 = self.pad(x1)
+        out0 = self.conv0(x0)
+        out1 = self.conv1(x1)
+
+        return out0, out1, heatmap, z
 
 class DiscriminatorUGATIT(nn.Module):
     def __init__(self, input_nc, ndf=64, n_layers=5):
@@ -1596,7 +1747,7 @@ class NICEResnetGenerator(nn.Module):
         assert (n_blocks >= 0)
         super(NICEResnetGenerator, self).__init__()
         self.input_nc = input_nc
-        self.output_nc = output_ncNICE
+        self.output_nc = output_nc
         self.ngf = ngf
         self.n_blocks = n_blocks
         self.img_size = img_size
