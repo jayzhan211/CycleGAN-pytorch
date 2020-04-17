@@ -178,8 +178,8 @@ class EfficientNet(nn.Module):
         # Final linear layer
         self._avg_pooling = nn.AdaptiveAvgPool2d(1)
         self._dropout = nn.Dropout(self._global_params.dropout_rate)
-        # self._fc = nn.Linear(out_channels, self._global_params.num_classes)
-        self._fc = nn.Linear(out_channels, 1)
+        self._fc = nn.Linear(out_channels, self._global_params.num_classes)
+        # self._fc = nn.Linear(out_channels, 1)
         self._swish = MemoryEfficientSwish()
 
     def set_swish(self, memory_efficient=True):
@@ -203,7 +203,7 @@ class EfficientNet(nn.Module):
                 drop_connect_rate *= float(idx) / len(self._blocks)
             x = block(x, drop_connect_rate=drop_connect_rate)
             num_repeat = num_repeat + 1
-            if(num_repeat == self._blocks_args[index].num_repeat):
+            if num_repeat == self._blocks_args[index].num_repeat:
                 num_repeat = 0
                 index = index + 1
                 feats.append(x)

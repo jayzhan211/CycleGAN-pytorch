@@ -1343,16 +1343,40 @@ class EfficientDetGenerator(nn.Module):
                       out_channels=bifpn_out_channels,
                       stack=num_stacks,
                       num_outs=num_outs)
-
+        # 1 224 32 32
+        # 1 112 64 64
+        # 1 56 128 128
+        # 1 28 256 256
         self.upblock = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(112, 56, kernel_size=3, stride=1, padding=0, bias=False),
+            nn.Conv2d(224, 56, kernel_size=3, stride=1, padding=0, bias=False),
             ILN(56),
             nn.ReLU(True),
-            nn.Conv2d(56, 64 * 16, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.PixelShuffle(4),
-            ILN(64),
+            nn.Conv2d(56, 112 * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(112),
             nn.ReLU(True),
+
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(112, 28, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(28),
+            nn.ReLU(True),
+            nn.Conv2d(28, 56 * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(56),
+            nn.ReLU(True),
+
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(56, 14, kernel_size=3, stride=1, padding=0, bias=False),
+            ILN(14),
+            nn.ReLU(True),
+            nn.Conv2d(14, 28 * 4, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.PixelShuffle(2),
+            ILN(28),
+            nn.ReLU(True),
+
+            nn.Conv2d(28, 64, kernel_size=1, stride=1, padding=0, bias=False),
+
             nn.ReflectionPad2d(3),
             nn.Conv2d(64, output_nc, kernel_size=7, stride=1, padding=0, bias=False),
             nn.Tanh()
@@ -1374,9 +1398,12 @@ class EfficientDetDiscrminator(nn.Module):
     def __init__(self, network='efficientnet-b4',):
         super(EfficientDetDiscrminator, self).__init__()
         self.backbone = EfficientNet.from_pretrained(network)
-
+        
+        self.fc = nn.Linear(1000, 1)
+        
     def forward(self, x):
         feats, x = self.backbone(x)
+        x = self.fc(x)
         return feats[-5:], x
 
 class ENSADiscriminator(nn.Module):
