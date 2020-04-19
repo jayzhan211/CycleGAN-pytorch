@@ -39,8 +39,8 @@ class EFFICIENTDETGANModel(BaseModel):
             # 'cam_G_B',
         ]
 
-        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A', 'real_A_heatmap']
-        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B', 'real_B_heatmap']
+        visual_names_A = ['real_A', 'fake_A2B', 'fake_A2A', 'fake_A2B2A']
+        visual_names_B = ['real_B', 'fake_B2A', 'fake_B2B', 'fake_B2A2B']
         self.visual_names = visual_names_A + visual_names_B
 
         self.model_names = ['genA2B', 'genB2A']

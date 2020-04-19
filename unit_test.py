@@ -12,55 +12,30 @@ import torch
 import numpy as np
 import cv2
 from PIL import Image
-from models.networks import UnetGenerator, ResnetGeneratorUGATIT, NICE3SResnetGenerator, NICEDiscriminator, NICE3SDiscriminator, NICEResnetGenerator, ILN, DiscriminatorUGATIT, NICEV2ResnetGenerator, NICESADiscriminator, EfficientDetGenerator, EfficientDetDiscrminator
+from models.networks import UnetGenerator, ResnetGeneratorUGATIT, NICE3SResnetGenerator, NICEDiscriminator, \
+    NICE3SDiscriminator, NICEResnetGenerator, ILN, DiscriminatorUGATIT, NICEV2ResnetGenerator, NICESADiscriminator, \
+    EfficientDetGenerator, EfficientDetDiscrminator
 from torchvision.models import mobilenet_v2
-from thop import profile
+# from thop import profile
 import torch.nn.functional as F
-from efficientnet_pytorch import EfficientNet
+# from efficientnet_pytorch import EfficientNet
 from models.bifpn import BIFPN
 from models.efficientnet import EfficientNet
+from models.vq_layer import VectorQuantizerEMA
 
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def testImage():
+    genA2B = ResnetGeneratorUGATIT(input_nc=3, output_nc=3, ngf=64,
+                                   n_blocks=4, img_size=256, light=True)
+    fake_A2B = genA2B()
+
+
 if __name__ == '__main__':
-    # model = EfficientDet(num_classes=3,
-    #                      network='efficientdet-d4',
-    #                      W_bifpn=224,
-    #                      D_bifpn=6,
-    #                      D_class=4
-    #                      )
-    # model = EfficientNet.from_pretrained("efficientnet-b2")
-    # # print(model)
-    # # print(x1.size())
+    input = torch.randn(10, 3, 2, 2)
+    empty = input.new_empty(0)
+    print(empty)
 
-    dis = EfficientDetDiscrminator()
-    gen = EfficientDetGenerator(3,
-                                            bifpn_in_channels=dis.backbone.get_list_features()[-5:],
-                                            bifpn_out_channels=224,
-                                            num_stacks=6,
-                                            num_outs=5)
-    x = torch.randn(1, 3, 256, 256)
-    outs, x = dis(x)
-    fake = gen(outs)
-    # print(outs, x)
-    print(fake.size())
-
-    # neck = BIFPN(in_channels=model.get_list_features()[-5:],
-    #                       out_channels=112,
-    #                       stack=4,
-    #                       num_outs=5)
-    # print(neck)
-    # out1 = neck(out)
-    # print(len(out1))
-    # for idx, feat in enumerate(out):
-    #     print(feat.size())
-    # for idx, feat in enumerate(out1):
-    #     print(feat.size())
-    # print(out)
-    # print(x)
-    # x = F.pad(x, [1, 1])
-    # print(x.size())
-    # print(x)

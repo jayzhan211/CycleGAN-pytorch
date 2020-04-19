@@ -8,6 +8,7 @@ from torch.nn import init
 from torch.optim import lr_scheduler
 from torch.nn import functional as F
 import numpy as np
+from models.vq_layer import VectorQuantizerEMA
 
 ###############################################################################
 # Helper Functions
@@ -15,6 +16,7 @@ import numpy as np
 from utils.util import calc_mean_std
 from models.efficientnet import EfficientNet
 from models.bifpn import BIFPN
+
 
 class EqualLinear(nn.Module):
     def __init__(self, input_dim, output_dim, bias=True, bias_init=0, lr_mul=1, activation=None):
@@ -967,6 +969,30 @@ class ResnetAdaILNBlock(nn.Module):
         return out + x
 
 
+class ResnetILNBlock(nn.Module):
+    def __init__(self, dim, use_bias):
+        super(ResnetILNBlock, self).__init__()
+        self.pad1 = nn.ReflectionPad2d(1)
+        self.conv1 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=0, bias=use_bias)
+        self.norm1 = ILN(dim)
+        self.relu1 = nn.ReLU(True)
+
+        self.pad2 = nn.ReflectionPad2d(1)
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=0, bias=use_bias)
+        self.norm2 = ILN(dim)
+
+    def forward(self, x, gamma, beta):
+        out = self.pad1(x)
+        out = self.conv1(out)
+        out = self.norm1(out)
+        out = self.relu1(out)
+        out = self.pad2(out)
+        out = self.conv2(out)
+        out = self.norm2(out)
+
+        return out + x
+
+
 class ResnetGeneratorUGATIT(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_blocks=6, img_size=256, light=False):
         assert (n_blocks >= 0)
@@ -1301,8 +1327,6 @@ class NICESADiscriminator(nn.Module):
         self.Dis1_0 = nn.Sequential(*Dis1_0)
         self.Dis1_1 = nn.Sequential(*Dis1_1)
 
-
-
     def forward(self, x):
         x = self.model(x)
 
@@ -1334,15 +1358,132 @@ class NICESADiscriminator(nn.Module):
 
         return out0, out1, heatmap, z
 
+
+class NICEFQSADiscriminator(nn.Module):
+    """
+    Nice Discriminator with Self Attention and Feature Quantization
+    """
+
+    def __init__(self, input_nc, commitment_cost, dict_decay, ndf=64, n_layers=7):
+        super(NICEFQSADiscriminator, self).__init__()
+
+        # 3, h, w => 64, h/2, w/2, rf=4
+        model = [nn.ReflectionPad2d(1),
+                 nn.utils.spectral_norm(
+                     nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, padding=0, bias=True)),
+                 nn.LeakyReLU(0.2, True)]
+        # 64, h/2, w/2 => 128, h/4, w/4
+        model += [nn.ReflectionPad2d(1),
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf, ndf * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+
+        # SA module
+
+        self.query_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.key_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+        self.value_conv = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=False))
+
+        self.conv1x1 = nn.utils.spectral_norm(nn.Conv2d(ndf * 2, ndf * 2, kernel_size=1, stride=1, bias=True))
+        self.leaky_relu = nn.LeakyReLU(0.2, True)
+
+        self.softmax = nn.Softmax(dim=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        Dis0_0 = []
+        # 128, h/4, w/4 => 256, h/8, w/8
+        for i in range(2, n_layers - 4):  # 1+3*2^0 + 3*2^1 + 3*2^2 =22
+            mult = 2 ** (i - 1)
+            Dis0_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        # Dis0_1: 256, h/8, w/8 = > 512, h/8, w/8
+        # mult = 2 ** (n_layers - 4 - 1)
+        Dis0_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 = 46
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * 4, ndf * 8, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+
+        # mult = 2 ** (n_layers - 4)
+        self.conv0 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 + 3*2^3= 70
+            nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        Dis1_0 = []
+        for i in range(n_layers - 4,
+                       n_layers - 2):  # 1+3*2^0 + 3*2^1 + 3*2^2 + 3*2^3=46, 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 = 190
+            mult = 2 ** (i - 1)
+            Dis1_0 += [nn.ReflectionPad2d(1),
+                       nn.utils.spectral_norm(
+                           nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=2, padding=0, bias=True)),
+                       nn.LeakyReLU(0.2, True)]
+
+        mult = 2 ** (n_layers - 2 - 1)
+        Dis1_1 = [nn.ReflectionPad2d(1),  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5= 190 + 96 = 190
+                  nn.utils.spectral_norm(
+                      nn.Conv2d(ndf * mult, ndf * mult * 2, kernel_size=4, stride=1, padding=0, bias=True)),
+                  nn.LeakyReLU(0.2, True)]
+        mult = 2 ** (n_layers - 2)
+        self.conv1 = nn.utils.spectral_norm(  # 1+3*2^0 + 3*2^1 + 3*2^2 +3*2^3 +3*2^4 + 3*2^5 + 3*2^5 = 286
+            nn.Conv2d(ndf * mult, 1, kernel_size=4, stride=1, padding=0, bias=False))
+
+        # self.attn = Self_Attn( ndf * mult)
+        self.pad = nn.ReflectionPad2d(1)
+
+        self.model = nn.Sequential(*model)
+        self.Dis0_0 = nn.Sequential(*Dis0_0)
+        self.Dis0_1 = nn.Sequential(*Dis0_1)
+        self.Dis1_0 = nn.Sequential(*Dis1_0)
+        self.Dis1_1 = nn.Sequential(*Dis1_1)
+
+        self.quantize = {
+            'dis0_0': VectorQuantizerEMA(dim=256, n_embed=128, commitment_cost=commitment_cost, decay=dict_decay),
+
+        }
+
+    def forward(self, x):
+        x = self.model(x)
+
+        x_0 = x
+        # x = (1, 128, h/4, w/4)
+        b, c, h, w = x.size()
+        proj_query = self.query_conv(x).view(b, c, -1).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(b, c, -1)
+
+        # energy = (b, hw, hw)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(b, c, -1)
+        x = torch.bmm(proj_value, attention).view(b, c, h, w)
+        x = self.leaky_relu(self.conv1x1(x))
+        x = self.gamma * x + x_0
+        heatmap = torch.sum(x, dim=1, keepdim=True)
+
+        z = x
+
+        x0 = self.Dis0_0(x)
+        diff, ppl = self.qu
+        x1 = self.Dis1_0(x0)
+        x0 = self.Dis0_1(x0)
+        x1 = self.Dis1_1(x1)
+        x0 = self.pad(x0)
+        x1 = self.pad(x1)
+        out0 = self.conv0(x0)
+        out1 = self.conv1(x1)
+
+        return out0, out1, heatmap, z
+
+
 class EfficientDetGenerator(nn.Module):
 
     def __init__(self, output_nc, bifpn_in_channels, bifpn_out_channels, num_stacks, num_outs):
         super(EfficientDetGenerator, self).__init__()
-        
+
         self.model = BIFPN(in_channels=bifpn_in_channels,
-                      out_channels=bifpn_out_channels,
-                      stack=num_stacks,
-                      num_outs=num_outs)
+                           out_channels=bifpn_out_channels,
+                           stack=num_stacks,
+                           num_outs=num_outs)
         # 1 224 32 32
         # 1 112 64 64
         # 1 56 128 128
@@ -1392,19 +1533,21 @@ class EfficientDetGenerator(nn.Module):
         out = self.upblock(outs[0])
 
         return out
-    
+
+
 class EfficientDetDiscrminator(nn.Module):
     # EfficientDet Discriminator
-    def __init__(self, network='efficientnet-b4',):
+    def __init__(self, network='efficientnet-b4', ):
         super(EfficientDetDiscrminator, self).__init__()
         self.backbone = EfficientNet.from_pretrained(network)
-        
+
         self.fc = nn.Linear(1000, 1)
-        
+
     def forward(self, x):
         feats, x = self.backbone(x)
         x = self.fc(x)
         return feats[-5:], x
+
 
 class ENSADiscriminator(nn.Module):
     # Efficient Nice Self Attention Discriminator
@@ -1479,8 +1622,6 @@ class ENSADiscriminator(nn.Module):
         self.Dis1_0 = nn.Sequential(*Dis1_0)
         self.Dis1_1 = nn.Sequential(*Dis1_1)
 
-
-
     def forward(self, x):
         x = self.model(x)
 
@@ -1511,6 +1652,7 @@ class ENSADiscriminator(nn.Module):
         out1 = self.conv1(x1)
 
         return out0, out1, heatmap, z
+
 
 class DiscriminatorUGATIT(nn.Module):
     def __init__(self, input_nc, ndf=64, n_layers=5):
@@ -1957,6 +2099,102 @@ class NICEV2ResnetGenerator(nn.Module):
 
         for i in range(self.n_blocks):
             x = getattr(self, 'UpBlock1_' + str(i + 1))(x, gamma, beta)
+
+        out = self.UpBlock2(x)
+
+        return out
+
+
+class SelfAttentionBlock(nn.Module):
+    def __init__(self, batch_size, channels, height, width):
+        super(SelfAttentionBlock, self).__init__()
+        self.query_conv = nn.Conv2d(channels, channels, kernel_size=1, stride=1, bias=False)
+        self.key_conv = nn.Conv2d(channels, channels, kernel_size=1, stride=1, bias=False)
+        self.value_conv = nn.Conv2d(channels, channels, kernel_size=1, stride=1, bias=False)
+
+        self.conv1x1 = nn.Conv2d(channels, channels, kernel_size=1, stride=1, bias=False)
+        self.activation = nn.ReLU(True)
+
+        self.softmax = nn.Softmax(dim=1)
+        self.lambd = nn.Parameter(torch.zeros(batch_size, channels, height, width))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        x_0 = x
+        proj_query = self.query_conv(x).view(b, c, -1).permute(0, 2, 1)
+        # proj_query = b, c, hw
+        proj_key = self.key_conv(x).view(b, c, -1)
+
+        # energy = (b, hw, hw)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(b, c, -1)
+        x = torch.bmm(proj_value, attention).view(b, c, h, w)
+        x = self.activation(self.conv1x1(x))
+        return self.lamb * x + x_0
+
+
+class NICESAResnetGenerator(nn.Module):
+    def __init__(self, input_nc, output_nc, ngf=64, n_res=6, n_sa=1, img_size=256, batch_size=1):
+        assert n_sa >= 0, n_res >= 0
+        super(NICESAResnetGenerator, self).__init__()
+
+        self.input_nc = input_nc
+        self.output_nc = output_nc
+        self.ngf = ngf
+        self.n_res = n_res
+        self.n_sa = n_sa
+        self.img_size = img_size
+
+        # 128, h/4, w/4 = > 256, h/4, w/4,
+        mult = 2
+        UpBlock0 = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=0, bias=True),
+            ILN(ngf * mult * 2),
+            nn.ReLU(True),
+        ]
+
+        mult = 4
+        # SA module
+        for i in range(n_sa):
+            setattr(self, 'SABlock_{}'.format(i), SelfAttentionBlock(batch_size, ngf * mult, img_size // mult, img_size // mult))
+
+        # Up-Sampling Bottleneck
+        for i in range(n_res):
+            setattr(self, 'UpBlock1_{}'.format(i), ResnetILNBlock(ngf * mult, use_bias=False))
+
+        n_downsampling = 2
+        # Up-Sampling
+        UpBlock2 = []
+        for i in range(n_downsampling):
+            mult = 2 ** (n_downsampling - i)
+            # Experiments show that the performance of Up-sample and Sub-pixel is similar,
+            #  although theoretically Sub-pixel has more parameters and less FLOPs.
+            UpBlock2 += [nn.Upsample(scale_factor=2, mode='nearest'),
+                         nn.ReflectionPad2d(1),
+                         nn.Conv2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0, bias=False),
+                         ILN(int(ngf * mult / 2)),
+                         nn.ReLU(True)]
+
+        UpBlock2 += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(ngf, output_nc, kernel_size=7, stride=1, padding=0, bias=False),
+            nn.Tanh()
+        ]
+
+        self.UpBlock0 = nn.Sequential(*UpBlock0)
+        self.UpBlock2 = nn.Sequential(*UpBlock2)
+
+    def forward(self, z):
+        x = z
+        x = self.UpBlock0(x)
+
+        for i in range(self.n_sa):
+            x = getattr(self, 'SABlock_{}'.format(i))(x)
+
+        for i in range(self.n_blocks):
+            x = getattr(self, 'UpBlock1_{}'.format(i))(x)
 
         out = self.UpBlock2(x)
 
