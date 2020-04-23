@@ -59,12 +59,14 @@ class NICESAGANModel(BaseModel):
         else:
             raise NotImplementedError('netG : {} is not Implemented.'.format(opt.netG))
 
+        if opt.netD == 'nice_dis_sa':
+            self.disA = NICESADiscriminator(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
+            self.disB = NICESADiscriminator(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
+        else:
+            raise NotImplementedError('netD : {} is not Implemented.'.format(opt.netD))
+
         if self.isTrain:
-            if opt.netD == 'nice_dis_sa':
-                self.disA = NICESADiscriminator(opt.output_nc, opt.ndf, opt.n_dis).to(self.device)
-                self.disB = NICESADiscriminator(opt.input_nc, opt.ndf, opt.n_dis).to(self.device)
-            else:
-                raise NotImplementedError('netD : {} is not Implemented.'.format(opt.netD))
+
 
             """ Define Loss """
             self.L1_loss = nn.L1Loss().to(self.device)
