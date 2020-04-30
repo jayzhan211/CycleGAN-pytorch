@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from models.bifpn import BIFPN
 from models.efficientnet import EfficientNet
 from models.vq_layer import VectorQuantizerEMA
-
+import numpy as np
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -35,7 +35,8 @@ def testImage():
 
 
 if __name__ == '__main__':
-    input = torch.randn(10, 3, 2, 2)
-    empty = input.new_empty(0)
-    print(empty)
+    a = torch.Tensor(5)
+    b = torch.randn(5)
+    print(a)
+    print(b)
 
