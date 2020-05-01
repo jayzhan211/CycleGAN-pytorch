@@ -35,8 +35,7 @@ def testImage():
 
 
 if __name__ == '__main__':
-    a = torch.Tensor(5)
-    b = torch.randn(5)
+    a = []
+    a += [3, 5]
+    a += [9, 2, 3]
     print(a)
-    print(b)
-
