@@ -32,7 +32,11 @@ from models.networks_alae import Encoder
 
 
 if __name__ == '__main__':
-    x = torch.randn(3, 1, 2)
-    x[:, 0] += torch.randn(3, 2)
-    print(x, x.size())
-    print(x[:, :1].size())
+    x = torch.randn(64, 3)
+    y = torch.randn(64, 3)
+
+    loss = nn.MSELoss()
+    print(loss(x, y))
+
+    z = torch.mean((x - y) ** 2)
+    print(z)

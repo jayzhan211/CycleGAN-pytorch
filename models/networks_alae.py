@@ -67,7 +67,7 @@ class DecodeBlock(nn.Module):
         self.instance_norm_1 = nn.InstanceNorm2d(output_nc, affine=False, eps=1e-8)
         self.style_1 = LREQLinear(latent_size, 2 * output_nc, gain=1)
 
-        self.conv_1 = LREQConv2d(output_nc, output_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
+        self.conv_2 = LREQConv2d(output_nc, output_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
         self.noise_weight_2 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
         self.bias_2 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
         self.instance_norm_2 = nn.InstanceNorm2d(output_nc, affine=False, eps=1e-8)
@@ -86,11 +86,17 @@ class DecodeBlock(nn.Module):
 
         if noise:
             if noise == 'batch_constant':
+                x_size = torch.Size((1, 1, x.size(2), x.size(3)))
+                z = torch.cuda.FloatTensor(x_size)
+
                 x = torch.addcmul(x, value=1.0, tensor1=self.noise_weight_1,
-                                  tensor2=torch.randn([1, 1, x.shape[2], x.shape[3]]))
+                                  tensor2=torch.randn(x_size, out=z))
             else:
+                x_size = torch.Size((x.size(0), 1, x.size(2), x.size(3)))
+                z = torch.cuda.FloatTensor(x_size)
+
                 x = torch.addcmul(x, value=1.0, tensor1=self.noise_weight_1,
-                                  tensor2=torch.randn([x.shape[0], 1, x.shape[2], x.shape[3]]))
+                                  tensor2=torch.randn(x_size, out=z))
 
         else:
             s = np.power(self.layer + 1, 0.5)
@@ -108,11 +114,18 @@ class DecodeBlock(nn.Module):
 
         if noise:
             if noise == 'batch_constant':
+                x_size = torch.Size((1, 1, x.size(2), x.size(3)))
+                z = torch.cuda.FloatTensor(x_size)
+
                 x = torch.addcmul(x, value=1.0, tensor1=self.noise_weight_2,
-                                  tensor2=torch.randn([1, 1, x.shape[2], x.shape[3]]))
+                                  tensor2=torch.randn(x_size, out=z))
             else:
+                x_size = torch.Size((x.size(0), 1, x.size(2), x.size(3)))
+                z = torch.cuda.FloatTensor(x_size)
+
                 x = torch.addcmul(x, value=1.0, tensor1=self.noise_weight_2,
-                                  tensor2=torch.randn([x.shape[0], 1, x.shape[2], x.shape[3]]))
+                                  tensor2=torch.randn(x_size, out=z))
+
         else:
             s = np.power(self.layer + 1, 0.5)
             x = x + s * torch.exp(-x * x / (2.0 * s * s)) / np.sqrt(2 * np.pi) * 0.8
@@ -183,7 +196,8 @@ class Generator(nn.Module):
 
         mul = 2 ** (num_layers - 1)
         input_nc = min(init_f * mul, max_f)
-        resolution = 4
+        self.init_image = nn.Parameter(torch.ones(1, input_nc, 4, 4), requires_grad=True)
+        resolution = 2
 
         decode_blocks = nn.ModuleList()
         style_sizes = []
@@ -202,7 +216,7 @@ class Generator(nn.Module):
             input_nc = output_nc
             mul //= 2
 
-        self.init_image = nn.Parameter(torch.ones(1, input_nc, 4, 4), requires_grad=True)
+
         self.to_rgb = ToRGB(input_nc, num_channels)
         self.decode_blocks = decode_blocks
         self.style_sizes = style_sizes
@@ -213,7 +227,7 @@ class Generator(nn.Module):
         x = self.init_image
 
         for i in range(self.num_layers):
-            x = self.decode_block[i](x, styles[:, 2 * i + 0], styles[:, 2 * i + 1], noise)
+            x = self.decode_blocks[i](x, styles[:, 2 * i + 0], styles[:, 2 * i + 1], noise)
         x = self.to_rgb(x)
         return x
 
@@ -247,6 +261,8 @@ class EncodeBlock(nn.Module):
             self.style_2 = LREQLinear(2 * output_nc, latent_size)
 
         self.fused_scale = fused_scale
+        self.last = last
+
 
     def forward(self, x):
         x = self.conv_1(x) + self.bias_1
@@ -260,8 +276,8 @@ class EncodeBlock(nn.Module):
         if self.last:
             x = self.dense(x.view(x.shape[0], -1))
             x = F.leaky_relu(x, 0.2)
-            w1 = self.style_1(style_1)
-            w2 = self.style_2(x)
+            w1 = self.style_1(style_1.view(style_1.size(0), style_1.size(1)))
+            w2 = self.style_2(x.view(x.size(0),x.size(1)))
         else:
             x = self.conv_2(self.blur(x))
             if not self.fused_scale:
@@ -273,8 +289,8 @@ class EncodeBlock(nn.Module):
             style_2 = torch.cat((m, std), dim=1)
 
             x = self.instance_norm_2(x)
-            w1 = self.style_1(style_1)
-            w2 = self.style_2(style_2)
+            w1 = self.style_1(style_1.view(style_1.size(0), style_1.size(1)))
+            w2 = self.style_2(style_2.view(style_2.size(0), style_2.size(1)))
 
         return x, w1, w2
 
@@ -289,9 +305,11 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         input_nc = init_f
+
+        from_rgb = FromRGB(num_channels, input_nc)
         encode_blocks = nn.ModuleList()
 
-        resolution = 256
+        resolution = 2 ** (num_layers + 1)
 
         mul = 2
         for i in range(num_layers):
@@ -304,16 +322,19 @@ class Encoder(nn.Module):
             mul *= 2
 
         self.num_layers = num_layers
-        self.from_rbg = FromRGB(num_channels, input_nc)
+        self.from_rgb = from_rgb
+        self.latent_size = latent_size
+        self.encode_blocks = encode_blocks
 
     def encode(self, x):
-        styles = torch.zeros(x.shape[0], self.latent_size)
+        # styles = torch.zeros(x.shape[0], self.latent_size)
+        styles = torch.cuda.FloatTensor(x.shape[0], self.latent_size).fill_(0)
 
         x = self.from_rgb(x)
         x = F.leaky_relu(x, 0.2)
 
         for i in range(self.num_layers):
-            x, s1, s2 = self.encode_block[i](x)
+            x, s1, s2 = self.encode_blocks[i](x)
             styles += s1 + s2
 
         return styles
@@ -345,37 +366,4 @@ class Discriminator(nn.Module):
         for i in range(self.mapping_layers):
             x = self.map_blocks[i](x)
 
-        return x
-
-
-class Model(nn.Module):
-    def __init__(self, init_f=32, max_f=256, num_layers=6, latent_size=128, mapping_layers=5, num_channels=3):
-        super(Model, self).__init__()
-
-        # encode image A to W_A
-        self.encoderA = Encoder(init_f, max_f, latent_size, num_layers, num_channels)
-        # encode image B to W_B
-        self.encoderB = Encoder(init_f, max_f, latent_size, num_layers, num_channels)
-        # generate fakeA2B with W_A
-        self.generatorA2B = Generator(init_f, max_f, num_layers, latent_size, num_channels)
-        # generate fakeB2A with W_B
-        self.generatorB2A = Generator(init_f, max_f, num_layers, latent_size, num_channels)
-
-    def generate(self, real_image, z=None, batch_size=32, noise=True):
-        if z is None:
-            z = torch.randn(batch_size, self.latent_size)
-        styles = self.mapping_fl(z)
-        s = styles.view(styles.shape[0], 1, styles.shape[1])
-        styles = s.repeat(1, self.mapping_fl.num_layers, 1)
-
-        fake_image = self.decoder.forward(real_image, styles, noise)
-
-        return fake_image
-
-    def encode(self, x, lod, blend_factor):
-        Z = self.encoder(x, lod, blend_factor)
-        Z_cls = self.mapping_tl(Z)
-        return Z[:, :1], Z_cls[:, 1, 0]
-
-    def forward(self, x):
         return x
