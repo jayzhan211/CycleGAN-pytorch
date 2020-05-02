@@ -104,6 +104,9 @@ class ALAEModel(BaseModel):
 
         self.model_names = ['encoderA','encoderB','decoderA2B','decoderB2A','discriminatorA','discriminatorB']
 
+        self.optimizers.append(self.encoder_optimizer)
+        self.optimizers.append( self.decoder_optimizer)
+
     def set_input(self, input):
         AtoB = self.direction in ['AtoB']
         self.realA = input['A' if AtoB else 'B'].to(self.device)
