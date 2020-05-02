@@ -23,7 +23,7 @@ def upscale2d(x, factor=2):
 
 
 def downscale2d(x, factor=2):
-    return F.avg_pool2d(x, factor, factor)
+    return F.avg_pool2d(x, factor)
 
 
 class Blur(nn.Module):
@@ -55,10 +55,11 @@ class DecodeBlock(nn.Module):
         super(DecodeBlock, self).__init__()
         if has_first_conv:
             if fused_scale:
-                self.conv_1 = LREQConvTranspose2d(input_nc, output_nc, kernel_size=3, stride=2, padding=1, bias=False,
+                self.conv_1 = LREQConvTranspose2d(input_nc, output_nc, kernel_size=3, stride=2, padding=1,
+                                                  use_bias=False,
                                                   transform_kernel=True)
             else:
-                self.conv_1 = LREQConv2d(input_nc, output_nc, kernel_size=3, stride=1, padding=1, bias=False)
+                self.conv_1 = LREQConv2d(input_nc, output_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
 
         self.blur = Blur(output_nc)
         self.noise_weight_1 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
@@ -66,7 +67,7 @@ class DecodeBlock(nn.Module):
         self.instance_norm_1 = nn.InstanceNorm2d(output_nc, affine=False, eps=1e-8)
         self.style_1 = LREQLinear(latent_size, 2 * output_nc, gain=1)
 
-        self.conv_1 = LREQConv2d(output_nc, output_nc, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv_1 = LREQConv2d(output_nc, output_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
         self.noise_weight_2 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
         self.bias_2 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
         self.instance_norm_2 = nn.InstanceNorm2d(output_nc, affine=False, eps=1e-8)
@@ -127,9 +128,9 @@ class DecodeBlock(nn.Module):
 
 
 class FromRGB(nn.Module):
-    def __init__(self, channels, outputs):
+    def __init__(self, input_nc, output_nc):
         super(FromRGB, self).__init__()
-        self.from_rgb = LREQConv2d(channels, outputs, kernel_size=1, stride=1, padding=0)
+        self.from_rgb = LREQConv2d(input_nc, output_nc, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
         x = self.from_rgb(x)
@@ -177,18 +178,14 @@ class VAEMappingFromLatent(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, init_f=32, max_f=256, num_layers=3, latent_size=128, num_channels=3):
+    def __init__(self, init_f=32, max_f=256, num_layers=6, latent_size=128, num_channels=3):
         super(Generator, self).__init__()
 
         mul = 2 ** (num_layers - 1)
         input_nc = min(init_f * mul, max_f)
+        resolution = 4
 
-        self.const_image = nn.Parameter(torch.ones(1, input_nc, 4, 4), requires_grad=True)
-        resolution = 2
-        to_rgb = nn.ModuleList()
         decode_blocks = nn.ModuleList()
-
-        layer_to_resolution = []
         style_sizes = []
 
         for i in range(num_layers):
@@ -197,62 +194,172 @@ class Generator(nn.Module):
             fused_scale = resolution >= 64
             block = DecodeBlock(input_nc, output_nc, latent_size, has_first_conv, fused_scale, layer=i)
             resolution *= 2
-            layer_to_resolution.append(resolution)
+
             style_sizes += [2 * (input_nc if has_first_conv else output_nc), 2 * output_nc]
 
             decode_blocks.append(block)
-            to_rgb.append(ToRGB(output_nc, num_channels))
+
             input_nc = output_nc
             mul //= 2
 
-        self.to_rgb = to_rgb
+        self.init_image = nn.Parameter(torch.ones(1, input_nc, 4, 4), requires_grad=True)
+        self.to_rgb = ToRGB(input_nc, num_channels)
         self.decode_blocks = decode_blocks
-        self.layer_to_resolution = layer_to_resolution
         self.style_sizes = style_sizes
 
-    def decode(self, styles, layers, noise):
-        x = self.const
+        self.num_layers = num_layers
 
-        for i in range(layers):
+    def decode(self, styles, noise):
+        x = self.init_image
+
+        for i in range(self.num_layers):
             x = self.decode_block[i](x, styles[:, 2 * i + 0], styles[:, 2 * i + 1], noise)
-        x = self.to_rgb[layers](x)
+        x = self.to_rgb(x)
         return x
 
-    def decode2(self, styles, layers, blend, noise):
-        x = self.const
+    def forward(self, styles, noise):
+        return self.decode(styles, noise)
 
-        for i in range(layers):
-            x = self.decode_block[i](x, styles[:, 2 * i + 0], styles[:, 2 * i + 1], noise)
 
-        x_prev = self.to_rgb[layers - 1](x)
-
-        x = self.decode_block[layers](x, styles[:, 2 * layers + 0], styles[:, 2 * layers + 1], noise)
-        x = self.to_rgb[layers](x)
-
-        needed_resolution = self.layer_to_resolution[layers]
-
-        x_prev = F.interpolate(x_prev, size=needed_resolution)
-        x = torch.lerp(x_prev, x, blend)
-
-        return x
-
-    def forward(self, styles, layers, blend, noise):
-        if blend == 1:
-            return self.decode(styles, layers, noise)
+class EncodeBlock(nn.Module):
+    def __init__(self, input_nc, output_nc, latent_size, last=False, fused_scale=True):
+        super(EncodeBlock, self).__init__()
+        self.conv_1 = LREQConv2d(input_nc, input_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
+        self.bias_1 = nn.Parameter(torch.zeros(1, input_nc, 1, 1), requires_grad=True)
+        self.instance_norm_1 = nn.InstanceNorm2d(input_nc, affine=False)
+        self.blur = Blur(input_nc)
+        if last:
+            self.dense = LREQLinear(input_nc * 4 * 4, output_nc)
         else:
-            return self.decode2(styles, layers, blend, noise)
+            if fused_scale:
+                self.conv_2 = LREQConv2d(input_nc, output_nc, kernel_size=3, stride=2, padding=1, use_bias=False,
+                                         transform_kernel=True)
+            else:
+                self.conv_2 = LREQConv2d(input_nc, output_nc, kernel_size=3, stride=1, padding=1, use_bias=False)
+
+        self.bias_2 = nn.Parameter(torch.zeros(1, output_nc, 1, 1), requires_grad=True)
+        self.instance_norm_2 = nn.InstanceNorm2d(output_nc, affine=False)
+
+        self.style_1 = LREQLinear(2 * input_nc, latent_size)
+        if last:
+            self.style_2 = LREQLinear(output_nc, latent_size)
+        else:
+            self.style_2 = LREQLinear(2 * output_nc, latent_size)
+
+        self.fused_scale = fused_scale
+
+    def forward(self, x):
+        x = self.conv_1(x) + self.bias_1
+        x = F.leaky_relu(x, 0.2)
+
+        m = torch.mean(x, dim=[2, 3], keepdim=True)
+        std = torch.sqrt(torch.mean((x - m) ** 2, dim=[2, 3], keepdim=True))
+        style_1 = torch.cat((m, std), dim=1)
+        x = self.instance_norm_1(x)
+
+        if self.last:
+            x = self.dense(x.view(x.shape[0], -1))
+            x = F.leaky_relu(x, 0.2)
+            w1 = self.style_1(style_1)
+            w2 = self.style_2(x)
+        else:
+            x = self.conv_2(self.blur(x))
+            if not self.fused_scale:
+                x = downscale2d(x)
+            x = x + self.bias_2
+            x = F.leaky_relu(x, 0.2)
+            m = torch.mean(x, dim=[2, 3], keepdim=True)
+            std = torch.sqrt(torch.mean((x - m) ** 2, dim=[2, 3], keepdim=True))
+            style_2 = torch.cat((m, std), dim=1)
+
+            x = self.instance_norm_2(x)
+            w1 = self.style_1(style_1)
+            w2 = self.style_2(style_2)
+
+        return x, w1, w2
+
+
+class Encoder(nn.Module):
+    """
+    input: b, c=3, h=256, w=256
+    output: b, latent_size
+    """
+
+    def __init__(self, init_f, max_f, latent_size, num_layers=6, num_channels=3):
+        super(Encoder, self).__init__()
+
+        input_nc = init_f
+        encode_blocks = nn.ModuleList()
+
+        resolution = 256
+
+        mul = 2
+        for i in range(num_layers):
+            output_nc = min(max_f, init_f * mul)
+            fused_scale = resolution >= 128
+            block = EncodeBlock(input_nc, output_nc, latent_size, last=False, fused_scale=fused_scale)
+            resolution //= 2
+            encode_blocks.append(block)
+            input_nc = output_nc
+            mul *= 2
+
+        self.num_layers = num_layers
+        self.from_rbg = FromRGB(num_channels, input_nc)
+
+    def encode(self, x):
+        styles = torch.zeros(x.shape[0], self.latent_size)
+
+        x = self.from_rgb(x)
+        x = F.leaky_relu(x, 0.2)
+
+        for i in range(self.num_layers):
+            x, s1, s2 = self.encode_block[i](x)
+            styles += s1 + s2
+
+        return styles
+
+    def forward(self, x):
+        return self.encode(x)
+
+
+class Discriminator(nn.Module):
+    """
+    input: batch_size, latent_size
+    output: batch_size, 1
+    """
+
+    def __init__(self, mapping_layers=5, latent_size=256, mapping_fmaps=256):
+        super(Discriminator, self).__init__()
+        input_nc = latent_size
+        map_blocks = nn.ModuleList()
+        for i in range(mapping_layers):
+            output_nc = 1 if i + 1 == mapping_layers else mapping_fmaps
+            block = LREQLinear(input_nc, output_nc, lrmul=0.1)
+            input_nc = output_nc
+            map_blocks.append(block)
+
+        self.mapping_layers = mapping_layers
+        self.map_blocks = map_blocks
+
+    def forward(self, x):
+        for i in range(self.mapping_layers):
+            x = self.map_blocks[i](x)
+
+        return x
 
 
 class Model(nn.Module):
-    def __init__(self, num_layers, latent_size=128, mapping_layers=5):
+    def __init__(self, init_f=32, max_f=256, num_layers=6, latent_size=128, mapping_layers=5, num_channels=3):
         super(Model, self).__init__()
 
-        self.mapping_fl = VAEMappingFromLatent(
-            num_layers=num_layers * 2,
-            mapping_layers=mapping_layers,
-            latent_size=latent_size,
-            mapping_fmaps=latent_size,
-        )
+        # encode image A to W_A
+        self.encoderA = Encoder(init_f, max_f, latent_size, num_layers, num_channels)
+        # encode image B to W_B
+        self.encoderB = Encoder(init_f, max_f, latent_size, num_layers, num_channels)
+        # generate fakeA2B with W_A
+        self.generatorA2B = Generator(init_f, max_f, num_layers, latent_size, num_channels)
+        # generate fakeB2A with W_B
+        self.generatorB2A = Generator(init_f, max_f, num_layers, latent_size, num_channels)
 
     def generate(self, real_image, z=None, batch_size=32, noise=True):
         if z is None:
@@ -262,6 +369,13 @@ class Model(nn.Module):
         styles = s.repeat(1, self.mapping_fl.num_layers, 1)
 
         fake_image = self.decoder.forward(real_image, styles, noise)
+
+        return fake_image
+
+    def encode(self, x, lod, blend_factor):
+        Z = self.encoder(x, lod, blend_factor)
+        Z_cls = self.mapping_tl(Z)
+        return Z[:, :1], Z_cls[:, 1, 0]
 
     def forward(self, x):
         return x

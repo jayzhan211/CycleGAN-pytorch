@@ -39,7 +39,7 @@ class LREQLinear(nn.Module):
 
 class LREQConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, output_padding=0, dilation=1,
-                 groups=1, bias=True, gain=np.sqrt(2.0), transpose=False, transform_kernel=False, lrmul=1.0,
+                 groups=1, use_bias=True, gain=np.sqrt(2.0), transpose=False, transform_kernel=False, lrmul=1.0,
                  implicit_lreq=True):
         super(LREQConv2d, self).__init__()
         if in_channels % groups != 0:
@@ -50,25 +50,25 @@ class LREQConv2d(nn.Module):
         fan_in = np.prod((kernel_size, kernel_size)) * in_channels // groups
 
         if transpose:
-            self.weight = nn.Parameter(torch.zeros(in_channels, out_channels // groups, *self.kernel_size),
+            self.weight = nn.Parameter(torch.zeros(in_channels, out_channels // groups, kernel_size, kernel_size),
                                        requires_grad=True)
         else:
-            self.weight = nn.Parameter(torch.zeros(out_channels, in_channels // groups, *self.kernel_size),
+            self.weight = nn.Parameter(torch.zeros(out_channels, in_channels // groups, kernel_size, kernel_size),
                                        requires_grad=True)
-        if bias:
+        if use_bias:
             self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=True)
         else:
             self.bias = None
 
         std = gain / np.sqrt(fan_in)
 
-        if not self.implicit_lreq:
-            nn.init.normal_(self.weight, mean=0, std=1.0 / self.lrmul)
+        if not implicit_lreq:
+            nn.init.normal_(self.weight, mean=0, std=1.0 / lrmul)
         else:
-            nn.init.normal_(self.weight, mean=0, std=std / self.lrmul)
-            setattr(self.weight, 'lr_equalization_coef', self.std)
-            if self.bias:
-                setattr(self.bias, 'lr_equalization_coef', self.lrmul)
+            nn.init.normal_(self.weight, mean=0, std=std / lrmul)
+            setattr(self.weight, 'lr_equalization_coef', std)
+            if use_bias:
+                setattr(self.bias, 'lr_equalization_coef', lrmul)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -120,7 +120,7 @@ class LREQConv2d(nn.Module):
 
 class LREQConvTranspose2d(LREQConv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, output_padding=0, dilation=1,
-                 groups=1, bias=True, gain=np.sqrt(2.0), transform_kernel=False, lrmul=1.0,
+                 groups=1, use_bias=True, gain=np.sqrt(2.0), transform_kernel=False, lrmul=1.0,
                  implicit_lreq=True):
         super(LREQConvTranspose2d, self).__init__(in_channels=in_channels,
                                                   out_channels=out_channels,
@@ -130,7 +130,7 @@ class LREQConvTranspose2d(LREQConv2d):
                                                   output_padding=output_padding,
                                                   dilation=dilation,
                                                   groups=groups,
-                                                  bias=bias,
+                                                  use_bias=use_bias,
                                                   gain=gain,
                                                   transpose=True,
                                                   transform_kernel=transform_kernel,

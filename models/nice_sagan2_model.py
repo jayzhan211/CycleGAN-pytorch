@@ -1,2 +1,0 @@
-generator : nicesagan
-disriminator: nicesa

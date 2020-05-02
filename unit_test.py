@@ -28,14 +28,11 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def testImage():
-    genA2B = ResnetGeneratorUGATIT(input_nc=3, output_nc=3, ngf=64,
-                                   n_blocks=4, img_size=256, light=True)
-    fake_A2B = genA2B()
+from models.networks_alae import Encoder
 
 
 if __name__ == '__main__':
-    a = []
-    a += [3, 5]
-    a += [9, 2, 3]
-    print(a)
+    x = torch.randn(3, 1, 2)
+    x[:, 0] += torch.randn(3, 2)
+    print(x, x.size())
+    print(x[:, :1].size())
