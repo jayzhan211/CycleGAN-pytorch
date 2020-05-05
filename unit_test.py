@@ -37,17 +37,15 @@ def upscale2d(x, factor=2):
     x = torch.reshape(x, [-1, s[1], s[2] * factor, s[3] * factor])
     return x
 
-if __name__ == '__main__':
-    x = torch.zeros(1, 0)
-    w = torch.randn(1, 3)
-    w1 = torch.randn(1, 3)
-    x = torch.cat([w, x], dim=1)
-    x = torch.cat([w1, x], dim=1)
 
+
+if __name__ == '__main__':
+
+    x = torch.randn(1, 4, 2, 2)
+    z = F.avg_pool2d(x, 2)
     print(x)
-    print(w)
-    print(w1)
-    print(x[:, :3])
-    print(x[:, 3:6])
+    print(z)
+
+
 
 

@@ -4,20 +4,12 @@ import torch
 from torch.nn import functional as F
 
 
-def downscale2d(x, factor=2):
-    return F.avg_pool2d(x, factor)
-
 def style_mod(x, style):
     style = style.view(style.shape[0], 2, x.shape[1], 1, 1)
     return torch.addcmul(style[:, 1], value=1.0, tensor1=x, tensor2=style[:, 0])
 
 
-def upscale2d(x, factor=2):
-    s = x.shape
-    x = torch.reshape(x, [-1, s[1], s[2], 1, s[3], 1])
-    x = x.repeat(1, 1, 1, factor, 1, factor)
-    x = torch.reshape(x, [-1, s[1], s[2] * factor, s[3] * factor])
-    return x
+
 
 
 class EncodeBlock(nn.Module):
@@ -52,7 +44,7 @@ class EncodeBlock(nn.Module):
 
         x = self.conv_2(x)
         if not self.fused_scale:
-            x = self.down_pool(x)
+            x = F.avg_pool2d(x, 2)
         x = self.bias_2 + x
         x = F.leaky_relu(x, 0.2)
         m = torch.mean(x, dim=[2, 3], keepdim=True)
@@ -146,7 +138,7 @@ class DecodeBlock(nn.Module):
 
     def forward(self, x, s1, s2):
         if not self.fused_scale:
-            x = upscale2d(x)
+            x = F.interpolate(x, scale_factor=2)
         x = self.conv_1(x)
         x = self.bias_1 + x
         x = F.leaky_relu(x, 0.2)
