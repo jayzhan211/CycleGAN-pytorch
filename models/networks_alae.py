@@ -345,13 +345,14 @@ class Encoder(nn.Module):
 
 class Discriminator(nn.Module):
     """
-    input: batch_size, latent_size
+    input: batch_size, 256, 4, 4
     output: batch_size, 1
     """
 
     def __init__(self, mapping_layers=5, latent_size=256, mapping_fmaps=256):
         super(Discriminator, self).__init__()
         input_nc = latent_size
+
         map_blocks = nn.ModuleList()
         for i in range(mapping_layers):
             output_nc = 1 if i + 1 == mapping_layers else mapping_fmaps

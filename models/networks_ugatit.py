@@ -61,7 +61,7 @@ class EncodeBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_channels=3, ngf=64, maxf=256, latent_size=256, num_layers=6):
+    def __init__(self, num_channels=3, ngf=64, maxf=256, latent_size=256, num_layers=6, mapping_layers=6, mapping_fmaps=256):
         super(Encoder, self).__init__()
         """
         input = b, 3, h, w
@@ -95,10 +95,23 @@ class Encoder(nn.Module):
             input_nc = output_nc
             mul *= 2
 
+        dense = [LREQLinear(input_nc * 4 * 4, latent_size)]
+        map_blocks = nn.ModuleList()
+
+        input_nc = latent_size
+        for i in range(mapping_layers):
+            output_nc = 1 if i + 1 == mapping_layers else mapping_fmaps
+            block = LREQLinear(input_nc, output_nc, lrmul=0.1)
+            map_blocks.append(block)
+            input_nc = output_nc
+
+        self.mapping_layers = mapping_layers
+        self.map_blocks = map_blocks
         self.num_layers = num_layers
         self.from_rgb = nn.Sequential(*from_rgb)
         self.latent_size = latent_size
         self.encode_blocks = encode_blocks
+        self.dense = nn.Sequential(*dense)
 
     def forward(self, x):
         # x.size = batch, channel=3, h, w
@@ -110,7 +123,12 @@ class Encoder(nn.Module):
             x, w = self.encode_blocks[i](x)
             styles = torch.cat([w, styles], dim=1)
 
-        return x, styles.view(styles.size(0), styles.size(1), 1, 1)
+        x_0 = x
+        logit = self.dense(x.view(x.size(0), -1))
+        for i in range(self.mapping_layers):
+            logit = self.map_blocks[i](logit)
+
+        return x_0, styles.view(styles.size(0), styles.size(1), 1, 1), logit
 
 
 class DecodeBlock(nn.Module):
@@ -186,3 +204,4 @@ class Generator(nn.Module):
 
         x = self.to_rgb(x)
         return x
+
