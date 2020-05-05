@@ -30,13 +30,24 @@ def count_parameters(model):
 
 from models.networks_alae import Encoder
 
+def upscale2d(x, factor=2):
+    s = x.shape
+    x = torch.reshape(x, [-1, s[1], s[2], 1, s[3], 1])
+    x = x.repeat(1, 1, 1, factor, 1, factor)
+    x = torch.reshape(x, [-1, s[1], s[2] * factor, s[3] * factor])
+    return x
 
 if __name__ == '__main__':
-    x = torch.randn(64, 3)
-    y = torch.randn(64, 3)
+    x = torch.zeros(1, 0)
+    w = torch.randn(1, 3)
+    w1 = torch.randn(1, 3)
+    x = torch.cat([w, x], dim=1)
+    x = torch.cat([w1, x], dim=1)
 
-    loss = nn.MSELoss()
-    print(loss(x, y))
+    print(x)
+    print(w)
+    print(w1)
+    print(x[:, :3])
+    print(x[:, 3:6])
 
-    z = torch.mean((x - y) ** 2)
-    print(z)
+

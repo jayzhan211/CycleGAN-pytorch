@@ -367,3 +367,5 @@ class Discriminator(nn.Module):
             x = self.map_blocks[i](x)
 
         return x
+
+
