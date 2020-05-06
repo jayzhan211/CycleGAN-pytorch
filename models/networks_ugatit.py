@@ -10,8 +10,6 @@ def style_mod(x, style):
 
 
 
-
-
 class EncodeBlock(nn.Module):
     def __init__(self, input_nc, output_nc, fused_scale, latent_size=256):
         super(EncodeBlock, self).__init__()
@@ -115,7 +113,8 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         # x.size = batch, channel=3, h, w
-        styles = torch.zeros(x.size(0), 0)
+        # styles = torch.zeros(x.size(0), 0)
+        styles = torch.cuda.FloatTensor(x.size(0), 0).fill_(0)
 
         x = self.from_rgb(x)
 
@@ -123,12 +122,14 @@ class Encoder(nn.Module):
             x, w = self.encode_blocks[i](x)
             styles = torch.cat([w, styles], dim=1)
 
+        # styles = styles.view(styles.size(0), styles.size(1), 1, 1)
+
         x_0 = x
         logit = self.dense(x.view(x.size(0), -1))
         for i in range(self.mapping_layers):
             logit = self.map_blocks[i](logit)
 
-        return x_0, styles.view(styles.size(0), styles.size(1), 1, 1), logit
+        return x_0, styles, logit
 
 
 class DecodeBlock(nn.Module):
@@ -161,6 +162,7 @@ class DecodeBlock(nn.Module):
         x = self.bias_1 + x
         x = F.leaky_relu(x, 0.2)
         x = self.instance_norm_1(x)
+        # print(s1.size())
         x = x + style_mod(x, self.style_1(s1)) * self.rho
 
         x = self.conv_2(x)

@@ -24,11 +24,13 @@ from models.efficientnet import EfficientNet
 from models.vq_layer import VectorQuantizerEMA
 import numpy as np
 
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 from models.networks_alae import Encoder
+
 
 def upscale2d(x, factor=2):
     s = x.shape
@@ -38,14 +40,12 @@ def upscale2d(x, factor=2):
     return x
 
 
-
 if __name__ == '__main__':
-
     x = torch.randn(1, 4, 2, 2)
-    z = F.avg_pool2d(x, 2)
-    print(x)
-    print(z)
+    z = torch.randn(1, 4, 1, 1)
+    p = []
+    p.append(x)
+    p.insert(0, z)
+    print(p)
 
-
-
-
+    # print((x[:, 0, 0, 0] + x[:, 1, 0, 0] + x[:, 2, 0, 0] + x[:, 3, 0, 0]) / 4)
